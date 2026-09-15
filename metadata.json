@@ -1,0 +1,6 @@
+{
+  "name": "STOCKPROOF",
+  "description": "AI-powered grain warehouse stock verification & risk assessment layer for banks, NBFCs, and field auditors",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

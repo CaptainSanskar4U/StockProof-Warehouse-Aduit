@@ -1,0 +1,159 @@
+@import "tailwindcss";
+
+@theme {
+  --font-instrument-serif: "Instrument Serif", serif;
+  --font-inter: "Inter", system-ui, sans-serif;
+  --font-display: "Archivo", sans-serif;
+  --font-sans: "Inter", "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+
+  --color-canvas: #141210;
+  --color-surface: #1B1815;
+  --color-surface-hover: #23201C;
+  --color-border: #2A2622;
+  --color-primary-text: #F3EFE7;
+  --color-secondary-text: #9C9388;
+  --color-amber-gold: #D9A441;
+  --color-amber-gold-hover: #E8B75A;
+  --color-status-consistent: #4C8B5A;
+  --color-status-review: #D9A441;
+  --color-status-urgent: #B5574F;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  /* clip (not hidden): kills sideways scroll WITHOUT breaking position: sticky */
+  overflow-x: clip;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #FAF8F3;
+  color: #2B2016;
+}
+
+.font-instrument-serif {
+  font-family: "Instrument Serif", serif;
+}
+
+.font-pp-mondwest {
+  font-family: "PP Mondwest", "Instrument Serif", serif;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Custom scrollbar — light editorial */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #FAF8F3;
+}
+::-webkit-scrollbar-thumb {
+  background: #D8D2C4;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B98A2E;
+}
+
+/* ---- Landing motion system (human-built, no AI-slop gradients) ---- */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(30px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-marquee {
+  animation: marquee 28s linear infinite;
+}
+.marquee-paused:hover .animate-marquee {
+  animation-play-state: paused;
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.8s ease-out forwards;
+  opacity: 0;
+}
+.mask-fade-x {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
+
+/* ---- Lenis buttery smooth scroll ---- */
+html.lenis, html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* ---- Fluid display type: one smooth curve from 360px phones to projectors ---- */
+.display-hero {
+  font-size: clamp(2rem, 1.2rem + 4.5vw, 4.5rem);
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+}
+.display-section {
+  font-size: clamp(1.65rem, 1.25rem + 2vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.display-console {
+  font-size: clamp(1.5rem, 1.15rem + 1.8vw, 2rem);
+  line-height: 1.15;
+}
+/* Long mono telemetry never forces sideways scroll on narrow phones */
+.telemetry {
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+/* ---- Notched phones: respect safe areas on fixed bars & toasts ---- */
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+.safe-top {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+/* ---- Touch floors: 44px targets on coarse pointers, desktop untouched ---- */
+@media (pointer: coarse) {
+  .touch-target {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/* ---- Production polish: visible keyboard focus, gold ring ---- */
+:focus-visible {
+  outline: 2px solid #B98A2E;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.lenis, .lenis.lenis-smooth { scroll-behavior: auto; }
+  .lenis { scroll-behavior: auto; }
+  .animate-marquee { animation: none; }
+  .animate-fade-in-up { animation: none; opacity: 1; }
+}
