@@ -16,7 +16,7 @@
 
 <br />
 
-<a href="https://YOUR-DEPLOYMENT.vercel.app"><img src="https://img.shields.io/badge/✨_View_Live_Demo-online-D9A441?style=for-the-badge&logo=vercel&logoColor=141210&labelColor=141210&color=D9A441" alt="View Live Demo" /></a>
+<a href="https://nimbus-plum-omega.vercel.app/"><img src="https://img.shields.io/badge/✨_View_Live_Demo-online-D9A441?style=for-the-badge&logo=vercel&logoColor=141210&labelColor=141210&color=D9A441" alt="View Live Demo" /></a>
 <a href="#run-locally"><img src="https://img.shields.io/badge/⚡_Quick_Start-local-141210?style=for-the-badge&logoColor=D9A441&labelColor=141210&color=2A2622" alt="Quick start" /></a>
 
 <br />
@@ -173,7 +173,7 @@ See `.env.example`. All optional for a local demo:
 
 ## ☁ Deploy to Vercel
 
-▶️ **Live demo:** https://YOUR-DEPLOYMENT.vercel.app
+▶️ **Live demo:** https://nimbus-plum-omega.vercel.app/
 
 ```bash
 vercel        # preview deploy
