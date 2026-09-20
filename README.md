@@ -15,6 +15,11 @@
 <img src="https://img.shields.io/badge/License-Apache--2.0-141210?style=flat&logoColor=D9A441" alt="Apache 2.0" />
 
 <br />
+
+<a href="https://YOUR-DEPLOYMENT.vercel.app"><img src="https://img.shields.io/badge/✨_View_Live_Demo-online-D9A441?style=for-the-badge&logo=vercel&logoColor=141210&labelColor=141210&color=D9A441" alt="View Live Demo" /></a>
+<a href="#run-locally"><img src="https://img.shields.io/badge/⚡_Quick_Start-local-141210?style=for-the-badge&logoColor=D9A441&labelColor=141210&color=2A2622" alt="Quick start" /></a>
+
+<br />
 <br />
 
 <img src="https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=1600&q=80" alt="Golden wheat pile at rest" width="100%" />
@@ -27,16 +32,11 @@
 
 ## 🧭 Journey
 
-- [🎭 The problem](#-the-problem)
-- [⚖️ The solution](#️-the-solution)
-- [🌾 Season curves](#-season-curves)
-- [✨ Features](#-features)
-- [🧱 Tech stack](#-tech-stack)
-- [🗂️ Project structure](#️-project-structure)
-- [🚀 Run locally](#-run-locally)
-- [🔑 Environment variables](#-environment-variables)
-- [☁️ Deploy to Vercel](#️-deploy-to-vercel)
-- [🔌 API overview](#-api-overview)
+<div align="center">
+
+✦ &nbsp;[Problem](#the-problem)&nbsp; ✦ &nbsp;[Solution](#the-solution)&nbsp; ✦ &nbsp;[Seasons](#season-curves)&nbsp; ✦ &nbsp;[Features](#features)&nbsp; ✦ &nbsp;[Stack](#tech-stack)&nbsp;<br />✦ &nbsp;[Map](#project-structure)&nbsp; ✦ &nbsp;[Run](#run-locally)&nbsp; ✦ &nbsp;[Keys](#environment-variables)&nbsp; ✦ &nbsp;[Cloud](#deploy-to-vercel)&nbsp; ✦ &nbsp;[API](#api-overview)&nbsp; ✦
+
+</div>
 
 ---
 
@@ -54,7 +54,7 @@ The result is a **warehouse blind spot**: weeks or months between disbursement a
 
 ---
 
-## ⚖️ The solution
+## ⚖ The solution
 
 Every verification run follows one defensible pipeline — **geometry in, defensible range out, never false precision**:
 
@@ -113,7 +113,7 @@ The same photo fill reads differently by season:
 
 ---
 
-## 🗂️ Project structure
+## 🗂 Project structure
 
 <details>
 <summary><i>Click to unfold the map</i></summary>
@@ -171,7 +171,9 @@ See `.env.example`. All optional for a local demo:
 
 ---
 
-## ☁️ Deploy to Vercel
+## ☁ Deploy to Vercel
+
+▶️ **Live demo:** https://YOUR-DEPLOYMENT.vercel.app
 
 ```bash
 vercel        # preview deploy
@@ -212,6 +214,8 @@ Then in the Vercel dashboard:
 *The system supports the auditor — it never replaces the physical audit.*
 
 *Working prototype for field-demo use. Agronomic tables reference USDA/FAO standards; estimates are decision-support ranges, not certified weighments.*
+
+<div align="right"><a href="#journey">↑ back to journey</a></div>
 
 </div>
 
