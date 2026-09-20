@@ -228,11 +228,13 @@ export default function App() {
             warehouses={warehouses}
             summary={summary}
             currentRole={currentRole}
+            currentAuditor={USERS[currentRole]}
             onSelectWarehouse={(warehouse) => setSelectedWarehouseForDetail(warehouse)}
             onStartVerification={(warehouse) => setActiveVerificationWarehouse(warehouse)}
             onOpenReport={() => setIsReportModalOpen(true)}
             onOpenReviewQueue={() => setCurrentView('reviews')}
             onNavigateToOverview={() => setCurrentView('overview')}
+            onVerificationSaved={handleVerificationCompleted}
             isLoading={isLoading}
           />
         )}

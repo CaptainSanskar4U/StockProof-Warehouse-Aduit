@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Warehouse, PortfolioSummary, UserRole, Verification, Season } from '../types.js';
 import { StatusChip } from './StatusChip.js';
 import { MetricCard } from './MetricCard.js';
+import { NewAuditTab } from './NewAuditTab.js';
 import { SEASON_PROFILES } from '../seasonProfiles.js';
 import { 
   Building2, 
@@ -18,18 +19,22 @@ import {
   Scale, 
   Layers, 
   FileSpreadsheet,
-  Plus
+  Plus,
+  Camera,
+  LayoutGrid
 } from 'lucide-react';
 
 interface DashboardViewProps {
   warehouses: Warehouse[];
   summary: PortfolioSummary | null;
   currentRole: UserRole;
+  currentAuditor: { id: string; name: string; role: string };
   onSelectWarehouse: (warehouse: Warehouse) => void;
   onStartVerification: (warehouse: Warehouse) => void;
   onOpenReport: () => void;
   onOpenReviewQueue: () => void;
   onNavigateToOverview?: () => void;
+  onVerificationSaved: (verification: Verification) => void;
   isLoading: boolean;
 }
 
@@ -37,13 +42,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   warehouses,
   summary,
   currentRole,
+  currentAuditor,
   onSelectWarehouse,
   onStartVerification,
   onOpenReport,
   onOpenReviewQueue,
   onNavigateToOverview,
+  onVerificationSaved,
   isLoading,
 }) => {
+  const [activeTab, setActiveTab] = useState<'new-audit' | 'portfolio'>('new-audit');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [selectedSeasonFilter, setSelectedSeasonFilter] = useState<string>('all');
@@ -122,6 +130,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </span>
         </div>
       )}
+
+      {/* Console tabs — New Audit is the default landing tab */}
+      <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#3D3226]/10 pb-2.5">
+        <button
+          type="button"
+          onClick={() => setActiveTab('new-audit')}
+          className={`touch-target px-4 py-2 rounded-full text-xs font-mono tracking-wider flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
+            activeTab === 'new-audit'
+              ? 'bg-[#2B2016] text-white font-bold shadow-xs'
+              : 'text-[#2B2016]/55 hover:text-[#3D3226] bg-white border border-[#3D3226]/10'
+          }`}
+        >
+          <Camera className="w-3.5 h-3.5" />
+          <span>NEW AUDIT</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('portfolio')}
+          className={`touch-target px-4 py-2 rounded-full text-xs font-mono tracking-wider flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
+            activeTab === 'portfolio'
+              ? 'bg-[#2B2016] text-white font-bold shadow-xs'
+              : 'text-[#2B2016]/55 hover:text-[#3D3226] bg-white border border-[#3D3226]/10'
+          }`}
+        >
+          <LayoutGrid className="w-3.5 h-3.5" />
+          <span>WAREHOUSE PORTFOLIO</span>
+        </button>
+      </div>
+
+      {activeTab === 'new-audit' ? (
+        <NewAuditTab
+          warehouses={warehouses}
+          currentAuditor={currentAuditor}
+          onVerificationSaved={onVerificationSaved}
+        />
+      ) : (
+      <>
 
       {/* Portfolio Risk Banner (Enhanced for Credit / Risk Officer) */}
       {currentRole === 'risk_officer' && summary && (
@@ -481,6 +526,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );

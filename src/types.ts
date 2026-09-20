@@ -76,6 +76,8 @@ export interface Verification {
   photoUrl: string;
   mediaType?: 'photo' | 'video-frame';
   referenceScale?: string;
+  receiptPhotoUrl?: string;
+  declaredSource?: 'registry' | 'manual';
   geometry: GeometryInputs;
   context: ContextInputs;
   estimate: {

@@ -152,6 +152,8 @@ async function startServer() {
         photoUrl,
         mediaType,
         referenceScale,
+        receiptPhotoUrl,
+        declaredSource,
         geometry,
         context,
         declaredTonnes,
@@ -187,6 +189,8 @@ async function startServer() {
         photoUrl: photoUrl || warehouse.pilePhotoUrl || SAMPLE_GRAIN_IMAGES.wheat_pile,
         mediaType: mediaType === 'video-frame' ? 'video-frame' : 'photo',
         referenceScale: typeof referenceScale === 'string' ? referenceScale : undefined,
+        receiptPhotoUrl: typeof receiptPhotoUrl === 'string' && receiptPhotoUrl.length > 0 ? receiptPhotoUrl : undefined,
+        declaredSource: declaredSource === 'manual' ? 'manual' : 'registry',
         geometry: {
           ...geometry,
           calculatedVolumeM3: Number(calculatedVolume.toFixed(1)),

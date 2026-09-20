@@ -52,6 +52,8 @@ export async function submitVerification(payload: {
   photoUrl: string;
   mediaType?: 'photo' | 'video-frame';
   referenceScale?: string;
+  receiptPhotoUrl?: string;
+  declaredSource?: 'registry' | 'manual';
   geometry: GeometryInputs;
   context: ContextInputs;
   declaredTonnes: number;
