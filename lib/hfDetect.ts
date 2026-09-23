@@ -59,7 +59,8 @@ export async function resolveImageBytes(source: string): Promise<{ buf: Uint8Arr
   throw new Error('unsupported image source');
 }
 
-/** One HF image-classification call → their DetectionResult shape. */
+/** One HF image-classification call → their DetectionResult shape.
+ * Retries while the model is cold-loading (HF 503 + estimated_time). */
 export async function detectWithHF(
   source: string,
   filename: string | undefined,
@@ -68,47 +69,68 @@ export async function detectWithHF(
 ): Promise<DetectFinding> {
   if (!token) throw new Error('HF_TOKEN missing');
   const { buf, contentType } = await resolveImageBytes(source);
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 25000);
-  try {
-    const r = await fetch(ROUTER + model, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
-      body: buf as unknown as BodyInit,
-      signal: ctrl.signal,
-    });
-    const text = await r.text();
-    if (!r.ok) throw new Error(`HF ${r.status}: ${text.slice(0, 200)}`);
-    let data: unknown;
+  let lastErr = '';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 25000);
     try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error('HF non-JSON response');
+      const r = await fetch(ROUTER + model, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
+        body: buf as unknown as BodyInit,
+        signal: ctrl.signal,
+      });
+      const text = await r.text();
+      if (!r.ok) {
+        // Cold model — HF tells us how long loading takes. Wait, retry.
+        let waitMs = 8000;
+        try {
+          const errJson = JSON.parse(text) as { estimated_time?: unknown };
+          if (typeof errJson.estimated_time === 'number' && errJson.estimated_time > 0) {
+            waitMs = Math.min(20000, Math.ceil(errJson.estimated_time * 1000) + 2000);
+          }
+        } catch {
+          /* plain-text error — fixed wait */
+        }
+        lastErr = `HF ${r.status}: ${text.slice(0, 120)}`;
+        if (attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          continue;
+        }
+        throw new Error(lastErr);
+      }
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error('HF non-JSON response');
+      }
+      if (!Array.isArray(data) || data.length === 0) throw new Error('HF empty predictions');
+      const preds = (data as { label: string; score: number }[]).filter(
+        (p) => typeof p.label === 'string' && typeof p.score === 'number',
+      );
+      if (preds.length === 0) throw new Error('HF malformed predictions');
+      const aiPred = preds.find((p) => isAiLabel(p.label));
+      let pAi: number;
+      if (aiPred) {
+        pAi = aiPred.score;
+      } else {
+        const realSum = preds.filter((p) => !isAiLabel(p.label)).reduce((s, p) => s + p.score, 0);
+        pAi = Math.max(0, Math.min(1, 1 - realSum));
+      }
+      pAi = Math.max(0, Math.min(1, pAi));
+      return {
+        label: pAi >= 0.5 ? 'ai' : 'real',
+        probability_ai: pAi,
+        probability_real: 1 - pAi,
+        confidence: Math.max(pAi, 1 - pAi),
+        raw_score: pAi,
+        backend: model,
+        filename,
+      };
+    } finally {
+      clearTimeout(t);
     }
-    if (!Array.isArray(data) || data.length === 0) throw new Error('HF empty predictions');
-    const preds = (data as { label: string; score: number }[]).filter(
-      (p) => typeof p.label === 'string' && typeof p.score === 'number',
-    );
-    if (preds.length === 0) throw new Error('HF malformed predictions');
-    const aiPred = preds.find((p) => isAiLabel(p.label));
-    let pAi: number;
-    if (aiPred) {
-      pAi = aiPred.score;
-    } else {
-      const realSum = preds.filter((p) => !isAiLabel(p.label)).reduce((s, p) => s + p.score, 0);
-      pAi = Math.max(0, Math.min(1, 1 - realSum));
-    }
-    pAi = Math.max(0, Math.min(1, pAi));
-    return {
-      label: pAi >= 0.5 ? 'ai' : 'real',
-      probability_ai: pAi,
-      probability_real: 1 - pAi,
-      confidence: Math.max(pAi, 1 - pAi),
-      raw_score: pAi,
-      backend: model,
-      filename,
-    };
-  } finally {
-    clearTimeout(t);
   }
+  throw new Error(lastErr || 'HF failed');
 }

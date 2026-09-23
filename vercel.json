@@ -20,7 +20,7 @@
   "functions": {
     "api/ai-detect.ts": {
       "memory": 512,
-      "maxDuration": 30
+      "maxDuration": 120
     },
     "api/**/*.ts": {
       "memory": 512,
