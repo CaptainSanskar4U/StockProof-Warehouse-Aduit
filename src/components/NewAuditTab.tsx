@@ -576,7 +576,7 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       ['Receipt photo attached', receiptPhoto ? 'yes' : 'no'],
       ['Photo quality', photoQuality ? (photoQuality.ok ? 'FULL PILE VISIBLE' : `NOT SUITABLE: ${photoQuality.reasons.join('; ')}`) : 'not checked'],
       ['AI suspicion (0-100, heuristic only)', photoAi ? String(photoAi.score) : 'not checked'],
-      ['AI likelihood (ultra ensemble)', ultraScore ? `${Math.round(ultraScore.probability_ai * 100)}% (${ultraScore.label})` : 'detector unavailable'],
+      ['AI likelihood (detector)', ultraScore ? `${Math.round(ultraScore.probability_ai * 100)}% (${ultraScore.label}, ${ultraScore.backend})` : 'detector unavailable'],
       ['Estimated (T)', estimationResult.centralEstimateTonnes.toFixed(1)],
       ['Range Low (T)', estimationResult.rangeLowTonnes.toFixed(1)],
       ['Range High (T)', estimationResult.rangeHighTonnes.toFixed(1)],
@@ -649,7 +649,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 <tr><td class="label">Reverse proof</td><td>${runDeclared.toFixed(1)}T needs ${revP.requiredVolumeM3.toFixed(0)} m³ / ${revP.requiredHeightM.toFixed(1)}m height vs measured ${heightMeters.toFixed(1)}m — ${revP.supported ? 'SUPPORTED' : 'NOT SUPPORTED'}</td></tr>
 <tr><td class="label">Physics</td><td>${geoP.deg.toFixed(1)}° vs ${geoP.min}-${geoP.max}° — ${geoP.violation ? 'PHYSICS VIOLATION' : 'POSSIBLE'}</td></tr>
 <tr><td class="label">Bankable (internal)</td><td>${bankP.bankableTonnes.toFixed(1)} T (haircut ${bankP.haircutPct.toFixed(1)}%)</td></tr>
-<tr><td class="label">AI likelihood (ultra)</td><td>${ultraScore ? `${Math.round(ultraScore.probability_ai * 100)}% (${ultraScore.label})` : 'detector unavailable'}</td></tr>
+<tr><td class="label">AI likelihood (detector)</td><td>${ultraScore ? `${Math.round(ultraScore.probability_ai * 100)}% (${ultraScore.label}, ${ultraScore.backend})` : 'detector unavailable'}</td></tr>
 </table>
 <div class="label mono">Visual Evidence</div>
 <img src="${photo.dataUrl}" alt="Audit evidence" />

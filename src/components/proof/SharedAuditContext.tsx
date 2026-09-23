@@ -19,11 +19,15 @@ export interface PhotoState {
   meanLuma: number;
 }
 
-/** Ultra ensemble verdict from the local Python sidecar (null = unavailable → heuristic fallback). */
+/** Detector verdict from the local Python sidecar (null = unavailable → heuristic fallback).
+ * label/confidence use the model's own calibrated threshold (sentry @ 0.05) —
+ * never judge probability_ai against a hardcoded 0.5/0.65. */
 export interface UltraScore {
   probability_ai: number;
   label: string;
   backend: string;
+  confidence: number;
+  threshold: number;
 }
 
 export const SHARED_DEFAULTS = {
@@ -35,6 +39,37 @@ export const SHARED_DEFAULTS = {
   compaction: 'medium' as CompactionLevel,
   storageDays: 25,
 };
+
+// Small fast payload just for the detector: 640px JPEG. The audit keeps the
+// full-res preview; ultra only needs enough pixels to judge synthetic traces.
+function makeDetectPayload(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const S = 640;
+        const scale = Math.min(1, S / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(dataUrl);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+// Field CPU takes minutes per ultra read and the sidecar serves one at a time.
+// Never let the camera tab hang: 60s client timeout, abort stale reads.
+const ULTRA_TIMEOUT_MS = 60000;
 
 // Offline blur estimate: 64px thumb, Laplacian variance. Higher = sharper.
 function measureBlurVariance(dataUrl: string): Promise<number> {
@@ -114,6 +149,7 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
   const [declaredText, setDeclaredText] = useState('');
   const [declaredTouched, setDeclaredTouched] = useState(false);
   const [priceText, setPriceText] = useState('');
+  const ultraCtrl = useRef<AbortController | null>(null);
 
   const refreshProofGates = useCallback(async (p: PhotoState, fileName: string) => {
     const blur = await measureBlurVariance(p.dataUrl);
@@ -124,29 +160,47 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
       evaluateAiSuspicion({ fileName, width: p.width, height: p.height, sizeKB: p.sizeKB, meanLuma: p.meanLuma, blurVariance: blur }),
     );
     // Ultra ensemble in background — never blocks. Stale responses are dropped
-    // when the auditor has already moved to another photo.
+    // when the auditor has already moved to another photo; the previous
+    // in-flight read is aborted so the single-worker sidecar never queues up.
+    ultraCtrl.current?.abort();
+    const ctrl = new AbortController();
+    ultraCtrl.current = ctrl;
     const token = ++ultraToken.current;
     setUltraScore(null);
     setUltraPending(true);
+    const timer = setTimeout(() => ctrl.abort(), ULTRA_TIMEOUT_MS);
     try {
+      const payload = await makeDetectPayload(p.dataUrl);
+      if (token !== ultraToken.current) return; // superseded while shrinking
       const res = await fetch('/api/ai-detect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: p.dataUrl }),
+        body: JSON.stringify({ dataUrl: payload }),
+        signal: ctrl.signal,
       });
       if (!res.ok) return; // detector unavailable -> heuristic banner stays
-      const data = (await res.json()) as { probability_ai?: number; label?: string; backend?: string };
+      const data = (await res.json()) as {
+        probability_ai?: number;
+        label?: string;
+        backend?: string;
+        confidence?: number;
+        threshold?: number;
+      };
       if (token !== ultraToken.current) return;
       if (typeof data.probability_ai === 'number') {
         setUltraScore({
           probability_ai: data.probability_ai,
           label: typeof data.label === 'string' ? data.label : 'unknown',
           backend: typeof data.backend === 'string' ? data.backend : 'ultra',
+          confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
+          threshold: typeof data.threshold === 'number' ? data.threshold : 0.033,
         });
       }
     } catch {
-      // Offline / detector warming up — heuristic warning already shown.
+      // Timeout / offline / detector warming up — heuristic warning already
+      // shown; card flips to "unavailable + Retry" instead of hanging.
     } finally {
+      clearTimeout(timer);
       if (token === ultraToken.current) setUltraPending(false);
     }
   }, []);
@@ -154,6 +208,7 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
   const setPhoto = useCallback((p: PhotoState | null) => {
     setPhotoState(p);
     if (!p) {
+      ultraCtrl.current?.abort();
       ultraToken.current += 1;
       setPhotoQuality(null);
       setPhotoAi(null);
@@ -164,6 +219,7 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
 
   const clearPhoto = useCallback(() => {
     setPhotoState(null);
+    ultraCtrl.current?.abort();
     ultraToken.current += 1;
     setPhotoQuality(null);
     setPhotoAi(null);

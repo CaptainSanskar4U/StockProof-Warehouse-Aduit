@@ -132,7 +132,7 @@ export const UltraScoreCard: React.FC<{
       return (
         <div className="washi-sheet px-4 py-3 flex items-center gap-3">
           <span className="w-1.5 h-1.5 rounded-full bg-[#A87F2A] shrink-0 animate-pulse" />
-          <p className="font-mono text-[11px] text-[#8A7D68]">🛰️ Ultra detector reading this photo… you can continue meanwhile.</p>
+          <p className="font-mono text-[11px] text-[#8A7D68]">🛰️ AI detector reading this photo (up to ~1 min on field CPU)… you can continue meanwhile.</p>
         </div>
       );
     }
@@ -164,22 +164,28 @@ export const UltraScoreCard: React.FC<{
     );
   }
   const pct = Math.round(score.probability_ai * 100);
-  const tone =
-    score.probability_ai >= 0.65
+  // Verdict follows the backend label (its own calibrated threshold), NOT the
+  // raw pct: model scores don't live on a 0-100 ruler, so 15% AI can mean AI.
+  // Strength comes from confidence in the predicted class.
+  const isAi = score.label === 'ai';
+  const strong = score.confidence >= 0.75;
+  const tone = isAi
+    ? strong
       ? { bg: 'bg-[#9C4A42] text-white', word: 'LIKELY AI-GENERATED', dot: '#9C4A42' }
-      : score.probability_ai >= 0.45
-      ? { bg: 'bg-[#A87F2A] text-white', word: 'UNCERTAIN', dot: '#A87F2A' }
-      : { bg: 'bg-[#4A6B4F] text-white', word: 'LIKELY REAL', dot: '#4A6B4F' };
+      : { bg: 'bg-[#A87F2A] text-white', word: 'UNCERTAIN · LEANING AI', dot: '#A87F2A' }
+    : strong
+      ? { bg: 'bg-[#4A6B4F] text-white', word: 'LIKELY REAL', dot: '#4A6B4F' }
+      : { bg: 'bg-[#A87F2A] text-white', word: 'UNCERTAIN · LEANING REAL', dot: '#A87F2A' };
   return (
     <div className="washi-sheet px-5 py-4 flex items-center gap-4">
       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: tone.dot }} />
       <div className="flex-1 min-w-0">
-        <p className="eyebrow-quiet">AI-detector · ultra ensemble</p>
+        <p className="eyebrow-quiet">AI-detector · {score.backend}</p>
         <p className="mt-1 flex items-baseline gap-2 flex-wrap">
           <span className="serif-reading text-3xl text-[#2A2118]">{pct}% AI</span>
           <span className={`px-3 py-1 rounded-full font-mono text-[11px] font-bold ${tone.bg}`}>{tone.word}</span>
         </p>
-        <p className="font-mono text-[11px] text-[#8A7D68] mt-1">Signal only, not proof · audit continues either way</p>
+        <p className="font-mono text-[11px] text-[#8A7D68] mt-1">Signal only, not proof · calibrated threshold {score.threshold} · audit continues either way</p>
       </div>
     </div>
   );
