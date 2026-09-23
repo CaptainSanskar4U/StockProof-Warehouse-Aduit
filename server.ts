@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -10,6 +11,7 @@ import {
   calculatePileVolume
 } from './server/estimation-service.js';
 import { Verification } from './src/types.js';
+import { detectWithHF, resolveImageBytes, HF_PRIMARY_MODEL, HF_XCHECK_MODEL } from './lib/hfDetect.js';
 
 function withSeasonDefaults(context: any) {
   if (!context) return { season: 'rabi', ...context };
@@ -30,39 +32,81 @@ async function startServer() {
     res.json({ status: 'ok', time: new Date().toISOString(), app: 'STOCKPROOF' });
   });
 
-  // --- AI image detection (lynote-ai/ai-image-detector, THEIR servers) ---
-  // Field laptop runs their own API: `aidetect api --backend ultra --port 8000`
-  // plus a sentry-convnext-small cross-check on 8001. Express is a thin
-  // multipart pass-through — their request/response format flows untouched.
+  // --- AI image detection ---
+  // Local: their lynote-ai/ai-image-detector sidecars when running (ultra on
+  // :8000, sentry on :8001). If a sidecar is down, fall back to HuggingFace
+  // serverless (same path the deployed Vercel site uses). Accepts JSON
+  // {dataUrl, filename} so one frontend works in both places.
   const AI_PRIMARY_URL = process.env.AI_PRIMARY_URL || 'http://127.0.0.1:8000';
   const AI_XCHECK_URL = process.env.AI_XCHECK_URL || 'http://127.0.0.1:8001';
-  const multipart = express.raw({ type: 'multipart/form-data', limit: '20mb' });
 
-  async function forwardDetect(upstreamBase: string, req: express.Request, res: express.Response) {
+  async function forwardDetect(
+    upstreamBase: string,
+    buf: Uint8Array,
+    contentType: string,
+    filename: string,
+  ): Promise<string> {
+    const boundary = '----stockproof' + Date.now();
+    const safeName = filename.replace(/[^\w.\-]+/g, '_') || 'photo.jpg';
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeName}"\r\nContent-Type: ${contentType}\r\n\r\n`,
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat([head, Buffer.from(buf), tail]);
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 170000);
     try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 170000);
-      let upstream: Response;
-      try {
-        upstream = await fetch(`${upstreamBase}/detect`, {
-          method: 'POST',
-          headers: { 'content-type': req.headers['content-type'] || 'multipart/form-data' },
-          body: req.body as Buffer,
-          signal: ctrl.signal,
-        });
-      } finally {
-        clearTimeout(t);
-      }
-      const text = await upstream.text();
-      res.status(upstream.status).type('application/json').send(text);
-    } catch {
-      res.status(503).json({ error: 'AI detector unavailable', unavailable: true });
+      const upstream = await fetch(`${upstreamBase}/detect`, {
+        method: 'POST',
+        headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+        body,
+        signal: ctrl.signal,
+      });
+      if (!upstream.ok) throw new Error(`upstream ${upstream.status}`);
+      return await upstream.text();
+    } finally {
+      clearTimeout(t);
     }
   }
 
-  // Primary: ultra (their strongest ensemble). Cross-check: sentry-convnext-small.
-  app.post('/api/ai-detect', multipart, (req, res) => forwardDetect(AI_PRIMARY_URL, req, res));
-  app.post('/api/ai-detect-crosscheck', multipart, (req, res) => forwardDetect(AI_XCHECK_URL, req, res));
+  async function detectHandler(
+    req: express.Request,
+    res: express.Response,
+    upstreamBase: string,
+    hfModel: string,
+  ) {
+    const body = (req.body ?? {}) as { dataUrl?: unknown; filename?: unknown };
+    const dataUrl = typeof body.dataUrl === 'string' ? body.dataUrl : '';
+    const filename = typeof body.filename === 'string' ? body.filename : undefined;
+    if (!dataUrl) return res.status(400).json({ error: 'dataUrl required' });
+    try {
+      const { buf, contentType } = await resolveImageBytes(dataUrl);
+      const text = await forwardDetect(upstreamBase, buf, contentType, filename || 'photo.jpg');
+      // Preserve their response shape (add filename if sidecar omitted it).
+      try {
+        const parsed = JSON.parse(text) as Record<string, unknown>;
+        if (filename && typeof parsed.filename !== 'string') parsed.filename = filename;
+        return res.json(parsed);
+      } catch {
+        return res.type('application/json').send(text);
+      }
+    } catch {
+      // Sidecar down — same HF path as the deployed site.
+      try {
+        const finding = await detectWithHF(dataUrl, filename, hfModel, process.env.HF_TOKEN);
+        return res.json(finding);
+      } catch {
+        return res.status(503).json({ error: 'AI detector unavailable', unavailable: true });
+      }
+    }
+  }
+
+  app.post('/api/ai-detect', (req, res) =>
+    detectHandler(req, res, AI_PRIMARY_URL, HF_PRIMARY_MODEL),
+  );
+  app.post('/api/ai-detect-crosscheck', (req, res) =>
+    detectHandler(req, res, AI_XCHECK_URL, HF_XCHECK_MODEL),
+  );
 
   // Detector status for the camera tab (their /health shape, per backend).
   app.get('/api/ai-detectors', async (_req, res) => {

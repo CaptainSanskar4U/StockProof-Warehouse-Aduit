@@ -119,7 +119,7 @@ export const DetectReportCard: React.FC<{
       return (
         <div className="washi-sheet px-4 py-3 flex items-center gap-3">
           <span className="w-1.5 h-1.5 rounded-full bg-[#A87F2A] shrink-0 animate-pulse" />
-          <p className="font-mono text-[11px] text-[#8A7D68]">AI detectors reading this photo (ultra + sentry)… you can continue meanwhile.</p>
+          <p className="font-mono text-[11px] text-[#8A7D68]">AI detectors reading this photo… you can continue meanwhile.</p>
         </div>
       );
     }
@@ -127,7 +127,7 @@ export const DetectReportCard: React.FC<{
       <div className="washi-sheet px-4 py-3 flex items-center gap-3 border-dashed">
         <span className="w-1.5 h-1.5 rounded-full bg-[#8A7D68] shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="font-mono text-[11px] text-[#8A7D68]">AI detectors unavailable — start them with `aidetect api`. Audit continues.</p>
+          <p className="font-mono text-[11px] text-[#8A7D68]">AI detector unavailable right now — retry, or continue the audit without it.</p>
         </div>
         {onRetry && (
           <button

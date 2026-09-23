@@ -10,6 +10,14 @@
     }
   ],
   "functions": {
+    "api/ai-detect.ts": {
+      "memory": 512,
+      "maxDuration": 30
+    },
+    "api/ai-detect-crosscheck.ts": {
+      "memory": 512,
+      "maxDuration": 30
+    },
     "api/**/*.ts": {
       "memory": 512,
       "maxDuration": 10

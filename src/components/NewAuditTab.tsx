@@ -575,8 +575,8 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       ['Declared source', declaredTouched ? 'manual entry' : 'registry value'],
       ['Receipt photo attached', receiptPhoto ? 'yes' : 'no'],
       ['Photo quality', photoQuality ? (photoQuality.ok ? 'FULL PILE VISIBLE' : `NOT SUITABLE: ${photoQuality.reasons.join('; ')}`) : 'not checked'],
-      ['AI-image ultra', detectPrimary ? `${detectPrimary.label} (AI ${detectPrimary.probability_ai.toFixed(3)} / real ${detectPrimary.probability_real.toFixed(3)} / conf ${detectPrimary.confidence.toFixed(3)})` : (detectPending ? 'reading…' : 'detector unavailable')],
-      ['AI-image sentry cross-check', detectCross ? `${detectCross.label} (AI ${detectCross.probability_ai.toFixed(3)} / real ${detectCross.probability_real.toFixed(3)} / conf ${detectCross.confidence.toFixed(3)})` : (detectPending ? 'reading…' : 'detector unavailable')],
+      ['AI-image primary', detectPrimary ? `${detectPrimary.label} (AI ${detectPrimary.probability_ai.toFixed(3)} / real ${detectPrimary.probability_real.toFixed(3)} / conf ${detectPrimary.confidence.toFixed(3)})` : (detectPending ? 'reading…' : 'detector unavailable')],
+      ['AI-image cross-check', detectCross ? `${detectCross.label} (AI ${detectCross.probability_ai.toFixed(3)} / real ${detectCross.probability_real.toFixed(3)} / conf ${detectCross.confidence.toFixed(3)})` : (detectPending ? 'reading…' : 'detector unavailable')],
       ['Estimated (T)', estimationResult.centralEstimateTonnes.toFixed(1)],
       ['Range Low (T)', estimationResult.rangeLowTonnes.toFixed(1)],
       ['Range High (T)', estimationResult.rangeHighTonnes.toFixed(1)],
@@ -649,8 +649,8 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 <tr><td class="label">Reverse proof</td><td>${runDeclared.toFixed(1)}T needs ${revP.requiredVolumeM3.toFixed(0)} m³ / ${revP.requiredHeightM.toFixed(1)}m height vs measured ${heightMeters.toFixed(1)}m — ${revP.supported ? 'SUPPORTED' : 'NOT SUPPORTED'}</td></tr>
 <tr><td class="label">Physics</td><td>${geoP.deg.toFixed(1)}° vs ${geoP.min}-${geoP.max}° — ${geoP.violation ? 'PHYSICS VIOLATION' : 'POSSIBLE'}</td></tr>
 <tr><td class="label">Bankable (internal)</td><td>${bankP.bankableTonnes.toFixed(1)} T (haircut ${bankP.haircutPct.toFixed(1)}%)</td></tr>
-<tr><td class="label">AI-image ultra</td><td>${detectPrimary ? `${detectPrimary.label} (AI ${detectPrimary.probability_ai.toFixed(3)})` : 'detector unavailable'}</td></tr>
-<tr><td class="label">AI-image sentry</td><td>${detectCross ? `${detectCross.label} (AI ${detectCross.probability_ai.toFixed(3)})` : 'detector unavailable'}</td></tr>
+<tr><td class="label">AI-image primary</td><td>${detectPrimary ? `${detectPrimary.label} (AI ${detectPrimary.probability_ai.toFixed(3)})` : 'detector unavailable'}</td></tr>
+<tr><td class="label">AI-image cross-check</td><td>${detectCross ? `${detectCross.label} (AI ${detectCross.probability_ai.toFixed(3)})` : 'detector unavailable'}</td></tr>
 </table>
 <div class="label mono">Visual Evidence</div>
 <img src="${photo.dataUrl}" alt="Audit evidence" />

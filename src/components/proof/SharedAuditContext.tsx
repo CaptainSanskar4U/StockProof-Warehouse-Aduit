@@ -30,17 +30,9 @@ export interface DetectFinding {
   filename?: string;
 }
 
-// Their servers answer one image at a time on field CPU — never hang the
-// camera tab: abort stale reads, 150s cap per photo.
+// Their detectors + the deployed HF path answer one image at a time —
+// never hang the camera tab: abort stale reads, 150s cap per photo.
 const DETECT_TIMEOUT_MS = 150000;
-
-async function dataUrlToBlob(dataUrl: string, fallbackName: string): Promise<{ blob: Blob; name: string }> {
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
-  const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
-  const name = fallbackName.includes('.') ? fallbackName : `${fallbackName}.${ext}`;
-  return { blob, name };
-}
 
 export const SHARED_DEFAULTS = {
   heightM: 3.8,
@@ -140,10 +132,9 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
     );
   }, []);
 
-  // Score the pile photo with their detectors, exactly their protocol:
-  // multipart `file` field, their DetectionResult JSON back. Primary ultra +
-  // sentry cross-check in parallel; stale photos abort so the single-worker
-  // sidecars never queue. Never blocks the audit.
+  // Score the pile photo with the AI detectors. Sends JSON (dataUrl) so the
+  // same endpoint works locally (their ultra/sentry sidecars) and on Vercel
+  // (HuggingFace serverless). Stale photos abort. Never blocks the audit.
   const runDetection = useCallback(async (p: PhotoState) => {
     detectCtrl.current?.abort();
     const ctrl = new AbortController();
@@ -154,10 +145,12 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
     setDetectPending(true);
     const timer = setTimeout(() => ctrl.abort(), DETECT_TIMEOUT_MS);
     const postOne = async (url: string): Promise<DetectFinding | null> => {
-      const { blob, name } = await dataUrlToBlob(p.dataUrl, p.name);
-      const form = new FormData();
-      form.append('file', blob, name);
-      const res = await fetch(url, { method: 'POST', body: form, signal: ctrl.signal });
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dataUrl: p.dataUrl, filename: p.name }),
+        signal: ctrl.signal,
+      });
       if (!res.ok) return null;
       const data = (await res.json()) as Record<string, unknown>;
       if (typeof data.probability_ai !== 'number' || typeof data.label !== 'string') return null;
