@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="460" viewBox="0 0 800 460" role="img" aria-label="Night audit over the grain pile">
+  <defs>
+    <linearGradient id="sp-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#100D09"/>
+      <stop offset="70%" stop-color="#191410"/>
+      <stop offset="100%" stop-color="#211910"/>
+    </linearGradient>
+    <linearGradient id="sp-beam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#D9A441" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#D9A441" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#D9A441" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="sp-pileglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#D9A441" stop-opacity="0.16"/>
+      <stop offset="70%" stop-color="#D9A441" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#D9A441" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sp-moonglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#F3EFE7" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#F3EFE7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- night sky -->
+  <rect x="0" y="0" width="800" height="460" fill="url(#sp-sky)"/>
+
+  <!-- sparse stars: gentle twinkle, staggered -->
+  <circle cx="60" cy="40" r="1.4" fill="#D9A441" opacity="0.3"><animate attributeName="opacity" values="0.15;0.7;0.15" dur="3.2s" begin="0.4s" repeatCount="indefinite"/></circle>
+  <circle cx="140" cy="90" r="1.1" fill="#F3EFE7" opacity="0.3"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="4.1s" begin="1.2s" repeatCount="indefinite"/></circle>
+  <circle cx="230" cy="45" r="1.5" fill="#D9A441" opacity="0.3"><animate attributeName="opacity" values="0.15;0.75;0.15" dur="2.8s" begin="2.0s" repeatCount="indefinite"/></circle>
+  <circle cx="310" cy="80" r="1.0" fill="#F3EFE7" opacity="0.3"><animate attributeName="opacity" values="0.1;0.55;0.1" dur="3.7s" begin="0.8s" repeatCount="indefinite"/></circle>
+  <circle cx="390" cy="38" r="1.3" fill="#D9A441" opacity="0.3"><animate attributeName="opacity" values="0.15;0.7;0.15" dur="4.4s" begin="1.7s" repeatCount="indefinite"/></circle>
+  <circle cx="470" cy="70" r="1.0" fill="#F3EFE7" opacity="0.3"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="3.0s" begin="2.5s" repeatCount="indefinite"/></circle>
+  <circle cx="550" cy="40" r="1.4" fill="#D9A441" opacity="0.3"><animate attributeName="opacity" values="0.15;0.7;0.15" dur="3.5s" begin="0.2s" repeatCount="indefinite"/></circle>
+  <circle cx="620" cy="110" r="1.1" fill="#F3EFE7" opacity="0.3"><animate attributeName="opacity" values="0.1;0.55;0.1" dur="4.0s" begin="1.0s" repeatCount="indefinite"/></circle>
+  <circle cx="90" cy="140" r="1.0" fill="#F3EFE7" opacity="0.3"><animate attributeName="opacity" values="0.1;0.55;0.1" dur="3.3s" begin="2.2s" repeatCount="indefinite"/></circle>
+  <circle cx="350" cy="120" r="1.2" fill="#D9A441" opacity="0.3"><animate attributeName="opacity" values="0.15;0.65;0.15" dur="3.9s" begin="0.6s" repeatCount="indefinite"/></circle>
+  <circle cx="500" cy="130" r="1.0" fill="#F3EFE7" opacity="0.3"><animate attributeName="opacity" values="0.1;0.55;0.1" dur="4.6s" begin="1.5s" repeatCount="indefinite"/></circle>
+  <circle cx="740" cy="150" r="1.3" fill="#D9A441" opacity="0.3"><animate attributeName="opacity" values="0.15;0.7;0.15" dur="3.1s" begin="2.8s" repeatCount="indefinite"/></circle>
+
+  <!-- season moon: Kharif haze -> Rabi crisp ring -> Zaid glare, 24s -->
+  <circle cx="690" cy="66" r="44" fill="url(#sp-moonglow)"/>
+  <circle cx="690" cy="66" r="24" fill="#F3EFE7" opacity="0.9">
+    <animate attributeName="fill" values="#B9C6D6;#F3EFE7;#FFE9B8;#B9C6D6" keyTimes="0;0.33;0.66;1" dur="24s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="690" cy="66" r="29" fill="none" stroke="#F3EFE7" stroke-width="1" opacity="0">
+    <animate attributeName="opacity" values="0;0.8;0;0" keyTimes="0;0.33;0.66;1" dur="24s" repeatCount="indefinite"/>
+  </circle>
+  <text x="690" y="112" text-anchor="middle" font-family="monospace" font-size="11" letter-spacing="3" fill="#9C9388" opacity="0.8">kharif
+    <animate attributeName="opacity" values="0.8;0;0;0.8" keyTimes="0;0.33;0.66;1" dur="24s" repeatCount="indefinite"/>
+  </text>
+  <text x="690" y="112" text-anchor="middle" font-family="monospace" font-size="11" letter-spacing="3" fill="#9C9388" opacity="0">rabi
+    <animate attributeName="opacity" values="0;0.8;0;0" keyTimes="0;0.33;0.66;1" dur="24s" repeatCount="indefinite"/>
+  </text>
+  <text x="690" y="112" text-anchor="middle" font-family="monospace" font-size="11" letter-spacing="3" fill="#9C9388" opacity="0">zaid
+    <animate attributeName="opacity" values="0;0;0.8;0" keyTimes="0;0.33;0.66;1" dur="24s" repeatCount="indefinite"/>
+  </text>
+
+  <!-- godown: wall, roof, sliding door -->
+  <polygon points="40,170 400,100 760,170" fill="#241C13" stroke="#D9A441" stroke-opacity="0.25" stroke-width="1"/>
+  <rect x="60" y="170" width="680" height="220" fill="#1B1510" stroke="#2A2118" stroke-width="1"/>
+  <line x1="60" y1="170" x2="740" y2="170" stroke="#D9A441" stroke-opacity="0.35" stroke-width="1"/>
+  <rect x="100" y="250" width="110" height="140" fill="#12100C" stroke="#3A2E20" stroke-width="1.5"/>
+  <line x1="120" y1="250" x2="120" y2="390" stroke="#3A2E20" stroke-width="1"/>
+  <line x1="140" y1="250" x2="140" y2="390" stroke="#3A2E20" stroke-width="1"/>
+  <line x1="160" y1="250" x2="160" y2="390" stroke="#3A2E20" stroke-width="1"/>
+  <line x1="180" y1="250" x2="180" y2="390" stroke="#3A2E20" stroke-width="1"/>
+
+  <!-- stencil nameplate on the wall -->
+  <text x="445" y="222" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="42" letter-spacing="10" fill="#D9A441">STOCKPROOF</text>
+  <text x="445" y="242" text-anchor="middle" font-family="monospace" font-size="12" letter-spacing="2" fill="#9C9388">geometry in · defensible range out</text>
+
+  <!-- verdict lantern by the door: consistent -> review -> high_priority, 9s -->
+  <rect x="228" y="262" width="14" height="20" fill="none" stroke="#8A7D68" stroke-width="1.5"/>
+  <circle cx="235" cy="292" r="16" fill="#4A6B4F" opacity="0.25">
+    <animate attributeName="fill" values="#4A6B4F;#A87F2A;#9C4A42;#4A6B4F" keyTimes="0;0.4;0.75;1" dur="9s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.25;0.35;0.4;0.25" keyTimes="0;0.4;0.75;1" dur="9s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="235" cy="292" r="5" fill="#F3EFE7">
+    <animate attributeName="fill" values="#7FB685;#E5B95C;#E07B6E;#7FB685" keyTimes="0;0.4;0.75;1" dur="9s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- the pile: cone silhouette + warm glow -->
+  <ellipse cx="520" cy="375" rx="150" ry="34" fill="url(#sp-pileglow)">
+    <animate attributeName="opacity" values="0.7;1;0.7" dur="6s" repeatCount="indefinite"/>
+  </ellipse>
+  <path d="M 400 390 L 520 238 L 640 390 Z" fill="#2E2417" stroke="#D9A441" stroke-opacity="0.7" stroke-width="1.5"/>
+  <path d="M 470 390 L 520 238 L 570 390" fill="none" stroke="#D9A441" stroke-opacity="0.25" stroke-width="1"/>
+  <path d="M 448 340 L 592 340 M 472 305 L 568 305 M 498 272 L 542 272" stroke="#D9A441" stroke-opacity="0.22" stroke-width="1"/>
+
+  <!-- measurement ticks: wake as the beam passes -->
+  <g opacity="0.9">
+    <line x1="662" y1="238" x2="662" y2="390" stroke="#F3EFE7" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="4 4"/>
+    <text x="672" y="318" font-family="monospace" font-size="12" fill="#F3EFE7" opacity="0.7">h</text>
+    <line x1="400" y1="402" x2="640" y2="402" stroke="#F3EFE7" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="4 4"/>
+    <text x="514" y="420" text-anchor="middle" font-family="monospace" font-size="12" fill="#F3EFE7" opacity="0.7">d</text>
+    <animate attributeName="opacity" values="0.15;0.15;1;1;0.15" keyTimes="0;0.42;0.55;0.8;1" dur="12s" repeatCount="indefinite"/>
+  </g>
+
+  <!-- settling grain dust: drifts down onto the pile, staggered -->
+  <circle cx="460" cy="250" r="1.6" fill="#D9A441" opacity="0"><animate attributeName="cy" values="250;360" dur="6s" begin="0s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0.7;0" keyTimes="0;0.3;1" dur="6s" begin="0s" repeatCount="indefinite"/></circle>
+  <circle cx="490" cy="230" r="1.3" fill="#D9A441" opacity="0"><animate attributeName="cy" values="230;350" dur="7s" begin="1.1s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0.6;0" keyTimes="0;0.3;1" dur="7s" begin="1.1s" repeatCount="indefinite"/></circle>
+  <circle cx="520" cy="210" r="1.8" fill="#F3EFE7" opacity="0"><animate attributeName="cy" values="210;330" dur="6.5s" begin="2.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0.65;0" keyTimes="0;0.3;1" dur="6.5s" begin="2.2s" repeatCount="indefinite"/></circle>
+  <circle cx="550" cy="240" r="1.4" fill="#D9A441" opacity="0"><animate attributeName="cy" values="240;355" dur="7.5s" begin="0.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0.6;0" keyTimes="0;0.3;1" dur="7.5s" begin="0.6s" repeatCount="indefinite"/></circle>
+  <circle cx="580" cy="220" r="1.6" fill="#D9A441" opacity="0"><animate attributeName="cy" values="220;345" dur="6.2s" begin="3.0s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0.7;0" keyTimes="0;0.3;1" dur="6.2s" begin="3.0s" repeatCount="indefinite"/></circle>
+  <circle cx="505" cy="260" r="1.2" fill="#F3EFE7" opacity="0"><animate attributeName="cy" values="260;365" dur="5.6s" begin="1.8s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0.55;0" keyTimes="0;0.3;1" dur="5.6s" begin="1.8s" repeatCount="indefinite"/></circle>
+  <circle cx="535" cy="250" r="1.5" fill="#D9A441" opacity="0"><animate attributeName="cy" values="250;360" dur="6.8s" begin="4.1s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0.65;0" keyTimes="0;0.3;1" dur="6.8s" begin="4.1s" repeatCount="indefinite"/></circle>
+  <circle cx="475" cy="280" r="1.3" fill="#D9A441" opacity="0"><animate attributeName="cy" values="280;370" dur="5.9s" begin="2.7s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0.6;0" keyTimes="0;0.3;1" dur="5.9s" begin="2.7s" repeatCount="indefinite"/></circle>
+
+  <!-- auditor's torch: scan beam sweeps the godown every 12s -->
+  <g opacity="0.85">
+    <rect x="40" y="150" width="70" height="245" fill="url(#sp-beam)">
+      <animate attributeName="x" values="40;40;730;730" keyTimes="0;0.08;0.92;1" dur="12s" repeatCount="indefinite"/>
+    </rect>
+    <line x1="75" y1="150" x2="75" y2="395" stroke="#D9A441" stroke-opacity="0.5" stroke-width="1">
+      <animate attributeName="x1" values="75;75;765;765" keyTimes="0;0.08;0.92;1" dur="12s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="75;75;765;765" keyTimes="0;0.08;0.92;1" dur="12s" repeatCount="indefinite"/>
+    </line>
+  </g>
+
+  <!-- review-queue fireflies: wander the foreground, one visits the ledger -->
+  <g>
+    <circle r="2.2" fill="#FFE9B8" opacity="0.8">
+      <animate attributeName="opacity" values="0.3;0.9;0.3" dur="2.4s" repeatCount="indefinite"/>
+      <animateMotion dur="13s" repeatCount="indefinite" path="M 300 420 Q 360 400 420 418 T 540 412 T 660 420 Q 560 435 460 428 T 300 420"/>
+    </circle>
+    <circle r="1.8" fill="#D9A441" opacity="0.7">
+      <animate attributeName="opacity" values="0.25;0.85;0.25" dur="3.1s" begin="0.7s" repeatCount="indefinite"/>
+      <animateMotion dur="17s" repeatCount="indefinite" path="M 620 425 Q 540 405 460 422 T 300 415 T 180 425 Q 300 438 450 430 T 620 425"/>
+    </circle>
+    <circle r="2.0" fill="#FFE9B8" opacity="0.75">
+      <animate attributeName="opacity" values="0.3;0.9;0.3" dur="2.8s" begin="1.4s" repeatCount="indefinite"/>
+      <animateMotion dur="9s" repeatCount="indefinite" path="M 235 320 Q 200 340 180 330 T 150 310 Q 190 300 235 320"/>
+    </circle>
+  </g>
+
+  <!-- ground -->
+  <line x1="0" y1="395" x2="800" y2="395" stroke="#2A2118" stroke-width="2"/>
+  <line x1="0" y1="398" x2="800" y2="398" stroke="#D9A441" stroke-opacity="0.15" stroke-width="1"/>
+
+  <!-- frame -->
+  <rect x="1" y="1" width="798" height="458" fill="none" stroke="#D9A441" stroke-opacity="0.3" stroke-width="1"/>
+</svg>

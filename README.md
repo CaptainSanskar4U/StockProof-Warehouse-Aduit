@@ -1,4 +1,8 @@
-<img src="https://capsule-render.vercel.app/api?type=waving&color=141210&height=230&section=header&text=STOCKPROOF&fontSize=62&fontColor=D9A441&fontAlignY=36&desc=Grain%20warehouse%20stock%20verification%20for%20agricultural%20credit&descSize=17&descAlignY=62&animation=fadeIn" alt="STOCKPROOF header" width="100%" />
+<img src="assets/stockproof-night.svg" alt="Night audit over the grain pile — the auditor's torch sweeps the godown" width="100%" />
+
+<div align="center">
+
+*the auditor's torch · every sweep is a verification run — geometry in, defensible range out*</div>
 
 <div align="center">
 
@@ -211,12 +215,14 @@ Then in the Vercel dashboard:
 
 <div align="center">
 
+─── ✦ ───
+
 *The system supports the auditor — it never replaces the physical audit.*
 
 *Working prototype for field-demo use. Agronomic tables reference USDA/FAO standards; estimates are decision-support ranges, not certified weighments.*
 
+*the lantern stays lit · the torch keeps sweeping* 🌙
+
 <div align="right"><a href="#journey">↑ back to journey</a></div>
 
 </div>
-
-<img src="https://capsule-render.vercel.app/api?type=waving&color=141210&height=120&section=footer&animation=fadeIn" alt="footer wave" width="100%" />
