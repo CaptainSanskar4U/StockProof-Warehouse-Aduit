@@ -30,6 +30,92 @@ async function startServer() {
     res.json({ status: 'ok', time: new Date().toISOString(), app: 'STOCKPROOF' });
   });
 
+  // --- AI image detector sidecar (lynote-ai/ai-image-detector, ultra backend) ---
+  // Local field laptop: Express auto-starts the Python sidecar on demand.
+  // Vercel/prod: sidecar absent -> 503 + frontend falls back to heuristic warning.
+  const AI_DETECT_URL = process.env.AI_DETECT_URL || 'http://127.0.0.1:8000';
+  const AI_DETECTOR_DIR = path.join(process.cwd(), '..', 'ai-image-detector');
+  const AI_DETECTOR_PY = path.join(AI_DETECTOR_DIR, '.venv', 'Scripts', 'python.exe');
+
+  async function aiDetectorHealthy(): Promise<boolean> {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 2500);
+      const r = await fetch(`${AI_DETECT_URL}/health`, { signal: ctrl.signal });
+      clearTimeout(t);
+      return r.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  let aiEnsureStarted = false;
+  function ensureAiDetector() {
+    if (aiEnsureStarted) return;
+    aiEnsureStarted = true;
+    (async () => {
+      if (await aiDetectorHealthy()) return;
+      try {
+        const fs = await import('fs');
+        const { spawn } = await import('child_process');
+        if (!fs.existsSync(AI_DETECTOR_PY)) return; // sidecar not installed: stay on heuristic
+        const logFile = path.join(AI_DETECTOR_DIR, 'ai-api.log');
+        const out = fs.openSync(logFile, 'a');
+        const child = spawn(AI_DETECTOR_PY, ['-u', 'serve_stockproof.py'], {
+          cwd: AI_DETECTOR_DIR,
+          detached: true,
+          stdio: ['ignore', out, out],
+          windowsHide: true,
+        });
+        child.unref();
+        // Poll until ultra weights are warm (can take a few minutes on CPU).
+        for (let i = 0; i < 60; i++) {
+          await new Promise((r) => setTimeout(r, 5000));
+          if (await aiDetectorHealthy()) break;
+        }
+      } catch (err) {
+        console.warn('AI detector sidecar could not start:', err);
+      }
+    })();
+  }
+
+  // Score a pile photo with the ultra ensemble. Body: { dataUrl }.
+  app.post('/api/ai-detect', async (req, res) => {
+    try {
+      const { dataUrl } = req.body as { dataUrl?: string };
+      if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+        return res.status(400).json({ error: 'dataUrl (data:image/...) required' });
+      }
+      const m = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (!m) return res.status(400).json({ error: 'invalid data URL' });
+      const buf = Buffer.from(m[2], 'base64');
+      if (buf.length > 18 * 1024 * 1024) {
+        return res.status(413).json({ error: 'image too large' });
+      }
+      const form = new FormData();
+      form.append('file', new Blob([buf], { type: m[1] }), 'pile.jpg');
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 180000);
+      let upstream: Response;
+      try {
+        upstream = await fetch(`${AI_DETECT_URL}/detect`, {
+          method: 'POST',
+          body: form,
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(t);
+      }
+      if (!upstream.ok) {
+        return res.status(502).json({ error: 'detector error', unavailable: true });
+      }
+      const data = (await upstream.json()) as Record<string, unknown>;
+      res.json({ ...data, detector: 'ultra', signal: true });
+    } catch {
+      res.status(503).json({ error: 'AI detector unavailable', unavailable: true });
+    }
+  });
+
   // Agronomic bulk density and compaction reference table
   app.get('/api/grain-profiles', (req, res) => {
     res.json({
@@ -297,6 +383,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`STOCKPROOF Warehouse Audit Server listening on http://0.0.0.0:${PORT}`);
+    ensureAiDetector();
   });
 }
 

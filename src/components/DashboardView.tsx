@@ -3,6 +3,8 @@ import { Warehouse, PortfolioSummary, UserRole, Verification, Season } from '../
 import { StatusChip } from './StatusChip.js';
 import { MetricCard } from './MetricCard.js';
 import { NewAuditTab } from './NewAuditTab.js';
+import { BankableTab, GeometryTab, ReverseTab } from './proof/ProofTabs.js';
+import { SharedAuditProvider } from './proof/SharedAuditContext.js';
 import { SEASON_PROFILES } from '../seasonProfiles.js';
 import { 
   Building2, 
@@ -21,7 +23,10 @@ import {
   FileSpreadsheet,
   Plus,
   Camera,
-  LayoutGrid
+  LayoutGrid,
+  FlipHorizontal2,
+  Ruler,
+  PiggyBank
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -51,7 +56,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onVerificationSaved,
   isLoading,
 }) => {
-  const [activeTab, setActiveTab] = useState<'new-audit' | 'portfolio'>('new-audit');
+  const [activeTab, setActiveTab] = useState<'new-audit' | 'reverse' | 'geometry' | 'bankable' | 'portfolio'>('new-audit');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [selectedSeasonFilter, setSelectedSeasonFilter] = useState<string>('all');
@@ -145,6 +150,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <Camera className="w-3.5 h-3.5" />
           <span>NEW AUDIT</span>
         </button>
+        {([
+          { id: 'reverse', label: 'REVERSE PROOF', Icon: FlipHorizontal2 },
+          { id: 'geometry', label: 'GEOMETRY', Icon: Ruler },
+          { id: 'bankable', label: 'BANKABLE', Icon: PiggyBank },
+        ] as const).map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setActiveTab(id)}
+            className={`touch-target px-4 py-2 rounded-full text-xs font-mono tracking-wider flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
+              activeTab === id
+                ? 'bg-[#2B2016] text-white font-bold shadow-xs'
+                : 'text-[#2B2016]/55 hover:text-[#3D3226] bg-white border border-[#3D3226]/10'
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            <span>{label}</span>
+          </button>
+        ))}
         <button
           type="button"
           onClick={() => setActiveTab('portfolio')}
@@ -159,12 +183,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </button>
       </div>
 
+      <SharedAuditProvider>
       {activeTab === 'new-audit' ? (
         <NewAuditTab
           warehouses={warehouses}
           currentAuditor={currentAuditor}
           onVerificationSaved={onVerificationSaved}
         />
+      ) : activeTab === 'reverse' ? (
+        <ReverseTab />
+      ) : activeTab === 'geometry' ? (
+        <GeometryTab />
+      ) : activeTab === 'bankable' ? (
+        <BankableTab />
       ) : (
       <>
 
@@ -529,6 +560,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
       </>
       )}
+      </SharedAuditProvider>
     </div>
   );
 };

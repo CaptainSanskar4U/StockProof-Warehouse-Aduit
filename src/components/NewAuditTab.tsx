@@ -14,6 +14,21 @@ import { GRAIN_BULK_DENSITIES, SAMPLE_GRAIN_IMAGES } from '../constants.js';
 import { SafeImage } from './SafeImage.js';
 import { previewEstimate, submitVerification } from '../services/api.js';
 import {
+  bankableTonnes,
+  reposeDeg,
+  reposeVerdict,
+  reverseProof,
+} from '../proofMath.js';
+import { useSharedAudit, type PhotoState } from './proof/SharedAuditContext.js';
+import {
+  AiWarningBanner,
+  BankableBlock,
+  PhotoGateBanner,
+  PhysicsCheckBlock,
+  ReverseProofBlock,
+  UltraScoreCard,
+} from './proof/ProofBlocks.js';
+import {
   Camera,
   Upload,
   X,
@@ -36,16 +51,6 @@ interface NewAuditTabProps {
 
 type Phase = 'idle' | 'preview' | 'measure' | 'analyzing' | 'result';
 
-interface PhotoState {
-  dataUrl: string;
-  name: string;
-  source: 'upload' | 'camera';
-  sizeKB: number;
-  width: number;
-  height: number;
-  meanLuma: number;
-}
-
 // Quiet progress — kept in code as five human moments, shown as a hairline.
 const STAGES = ['Photograph', 'Confirm', 'Describe', 'Reading', 'Finding'];
 const STAGE_HINT = [
@@ -56,12 +61,8 @@ const STAGE_HINT = [
   'Here is what the pile holds',
 ];
 
-// Calibrated starting points for a photo-first audit (auditor confirms on the
-// Measure screen — the system never auto-measures).
-const DEFAULT_HEIGHT_M = 3.8;
-const DEFAULT_BASE_DIAMETER_M = 10.5;
-const DEFAULT_HUMIDITY = 12.8;
-const DEFAULT_STORAGE_DAYS = 25;
+// Calibrated starting points live in SharedAuditContext (SHARED_DEFAULTS) so the
+// proof tabs always see the same pile — the system never auto-measures.
 
 const coneVolume = (h: number, d: number) =>
   Number((((1 / 3) * Math.PI * Math.pow(d / 2, 2) * h)).toFixed(1));
@@ -182,22 +183,23 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
 }) => {
   const [warehouseId, setWarehouseId] = useState<string>('');
   const [phase, setPhase] = useState<Phase>('idle');
-  const [photo, setPhoto] = useState<PhotoState | null>(null);
-
-  // MEASURE + UNDERSTAND inputs — auditor-confirmed on the Measure screen.
-  // These replace the old fixed defaults; every one of them moves the live estimate.
-  const [heightMeters, setHeightMeters] = useState<number>(DEFAULT_HEIGHT_M);
-  const [baseDiameterMeters, setBaseDiameterMeters] = useState<number>(DEFAULT_BASE_DIAMETER_M);
-  const [grainType, setGrainType] = useState<GrainType>('wheat');
-  const [season, setSeason] = useState<Season>('rabi');
-  const [humidityPercent, setHumidityPercent] = useState<number>(DEFAULT_HUMIDITY);
-  const [compaction, setCompaction] = useState<CompactionLevel>('medium');
-  const [storageDays, setStorageDays] = useState<number>(DEFAULT_STORAGE_DAYS);
+  // Shared pile: photo, gates, geometry and claim live here so the
+  // Reverse / Geometry / Bankable tabs always see the same audit.
+  const {
+    photo, setPhoto,
+    photoQuality, photoAi, ultraScore, ultraPending, clearPhoto, refreshProofGates,
+    heightMeters, setHeightMeters,
+    baseDiameterMeters, setBaseDiameterMeters,
+    grainType, setGrainType,
+    season, setSeason,
+    humidityPercent, setHumidityPercent,
+    compaction, setCompaction,
+    storageDays, setStorageDays,
+    declaredText, setDeclaredText,
+    declaredTouched, setDeclaredTouched,
+    priceText, setPriceText,
+  } = useSharedAudit();
   const liveVolume = coneVolume(heightMeters, baseDiameterMeters);
-
-  // VERIFY inputs — the declared side of the comparison.
-  const [declaredText, setDeclaredText] = useState<string>('');
-  const [declaredTouched, setDeclaredTouched] = useState<boolean>(false);
   const [receiptPhoto, setReceiptPhoto] = useState<PhotoState | null>(null);
   const [runDeclared, setRunDeclared] = useState<number>(0);
   const receiptInputRef = useRef<HTMLInputElement | null>(null);
@@ -240,7 +242,7 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
         setDeclaredTouched(false);
       }
       // New facility = new audit: never carry evidence, inputs, or results across facilities.
-      setPhoto(null);
+      clearPhoto();
       setReceiptPhoto(null);
       setEstimationResult(null);
       setSavedVerification(null);
@@ -271,7 +273,7 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     stopCamera();
     setCameraOpen(false);
     setCameraError(null);
-    setPhoto(null);
+    clearPhoto();
     setPhase('idle');
     setShowChooser(false);
     setErrorMsg(null);
@@ -317,9 +319,11 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     }
     try {
       const processed = await processImageFile(file);
-      setPhoto({ ...processed, name: file.name, source: 'upload' });
+      const next = { ...processed, name: file.name, source: 'upload' as const };
+      setPhoto(next);
       setPhase('preview');
       setShowChooser(false);
+      void refreshProofGates(next, file.name);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Could not process that image. Try a different file.');
     }
@@ -356,17 +360,21 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       const problem = validateImageFile(file);
       if (problem) throw new Error(problem);
       const processed = await processImageFile(file);
-      setPhoto({ ...processed, name: 'sample-wheat-pile.jpg', source: 'upload' });
+      const next = { ...processed, name: 'sample-wheat-pile.jpg', source: 'upload' as const };
+      setPhoto(next);
+      void refreshProofGates(next, 'sample-wheat-pile.jpg');
     } catch {
-      setPhoto({
+      const fallback = {
         dataUrl: SAMPLE_GRAIN_IMAGES.wheat_pile,
         name: 'sample-wheat-pile.jpg',
-        source: 'upload',
+        source: 'upload' as const,
         sizeKB: 0,
         width: 1200,
         height: 800,
         meanLuma: 128,
-      });
+      };
+      setPhoto(fallback);
+      void refreshProofGates(fallback, 'sample-wheat-pile.jpg');
     } finally {
       setLoadingSample(false);
       setPhase('preview');
@@ -418,20 +426,23 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
       const sizeKB = Math.round((dataUrl.length * 0.75) / 1024);
       const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      setPhoto({
+      const luma = sampleMeanLuma(ctx, canvas.width, canvas.height);
+      const next = {
         dataUrl,
         name: `capture-${stamp}.jpg`,
-        source: 'camera',
+        source: 'camera' as const,
         sizeKB,
         width: video.videoWidth,
         height: video.videoHeight,
-        meanLuma: sampleMeanLuma(ctx, canvas.width, canvas.height),
-      });
+        meanLuma: luma,
+      };
+      setPhoto(next);
       stopCamera();
       setCameraOpen(false);
       setPhase('preview');
       setShowChooser(false);
       setErrorMsg(null);
+      void refreshProofGates(next, next.name);
     } catch {
       setCameraError('Could not capture a frame on this device. Try “Upload from Device”.');
     }
@@ -538,6 +549,13 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
   const handleExportCSV = () => {
     if (!warehouse || !estimationResult) return;
     const diff = estimationResult.centralEstimateTonnes - runDeclared;
+    const rev = reverseProof(runDeclared, baseDiameterMeters, heightMeters, {
+      grainType, season, humidityPercent, compaction, storageDays,
+    });
+    const geo = reposeVerdict(heightMeters, baseDiameterMeters);
+    const bank = bankableTonnes(
+      estimationResult.rangeLowTonnes, estimationResult.confidencePercent, humidityPercent, true,
+    );
     const rows = [
       ['StockProof New Audit Report', new Date().toISOString()],
       ['Warehouse', warehouse.name],
@@ -546,6 +564,9 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       ['Receipt', warehouse.receiptNumber],
       ['Grain', grainLabel()],
       ['Pile geometry', `cone h ${heightMeters.toFixed(1)} m, base ${baseDiameterMeters.toFixed(1)} m (visual estimate)`],
+      ['Repose angle (deg)', geo.deg.toFixed(1)],
+      ['Repose band', `${geo.min}-${geo.max}`],
+      ['Physics verdict', geo.violation ? 'PHYSICS VIOLATION' : 'GEOMETRY POSSIBLE'],
       ['Season curve', SEASON_PROFILES[season].name],
       ['Moisture (%)', humidityPercent.toFixed(1)],
       ['Compaction', compaction],
@@ -553,9 +574,17 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       ['Declared (T)', runDeclared.toFixed(1)],
       ['Declared source', declaredTouched ? 'manual entry' : 'registry value'],
       ['Receipt photo attached', receiptPhoto ? 'yes' : 'no'],
+      ['Photo quality', photoQuality ? (photoQuality.ok ? 'FULL PILE VISIBLE' : `NOT SUITABLE: ${photoQuality.reasons.join('; ')}`) : 'not checked'],
+      ['AI suspicion (0-100, heuristic only)', photoAi ? String(photoAi.score) : 'not checked'],
+      ['AI likelihood (ultra ensemble)', ultraScore ? `${Math.round(ultraScore.probability_ai * 100)}% (${ultraScore.label})` : 'detector unavailable'],
       ['Estimated (T)', estimationResult.centralEstimateTonnes.toFixed(1)],
       ['Range Low (T)', estimationResult.rangeLowTonnes.toFixed(1)],
       ['Range High (T)', estimationResult.rangeHighTonnes.toFixed(1)],
+      ['Reverse required volume (m3)', rev.requiredVolumeM3.toFixed(1)],
+      ['Reverse required height (m)', rev.requiredHeightM.toFixed(1)],
+      ['Reverse verdict', rev.supported ? 'CLAIM SUPPORTED' : 'CLAIM NOT SUPPORTED'],
+      ['Bankable tonnes (STOCKPROOF internal)', bank.bankableTonnes.toFixed(1)],
+      ['Bankable haircut (%)', bank.haircutPct.toFixed(1)],
       ['Difference (T)', diff.toFixed(1)],
       ['Confidence (%)', String(estimationResult.confidencePercent)],
       ['Status', estimationResult.status],
@@ -583,6 +612,13 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       return;
     }
     const diff = estimationResult.centralEstimateTonnes - runDeclared;
+    const revP = reverseProof(runDeclared, baseDiameterMeters, heightMeters, {
+      grainType, season, humidityPercent, compaction, storageDays,
+    });
+    const geoP = reposeVerdict(heightMeters, baseDiameterMeters);
+    const bankP = bankableTonnes(
+      estimationResult.rangeLowTonnes, estimationResult.confidencePercent, humidityPercent, true,
+    );
     popup.document.write(`<!doctype html>
 <html><head><title>StockProof Audit Report — ${warehouse.code}</title>
 <style>
@@ -610,6 +646,10 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 <tr><td class="label">Season / moisture</td><td>${SEASON_PROFILES[season].name} · ${humidityPercent.toFixed(1)}% · ${compaction} compaction · ${storageDays} days</td></tr>
 <tr><td class="label">Volume</td><td>${estimationResult.volumeM3.toFixed(1)} m³</td></tr>
 <tr><td class="label">Effective density</td><td>${estimationResult.effectiveDensity.toFixed(3)} t/m³</td></tr>
+<tr><td class="label">Reverse proof</td><td>${runDeclared.toFixed(1)}T needs ${revP.requiredVolumeM3.toFixed(0)} m³ / ${revP.requiredHeightM.toFixed(1)}m height vs measured ${heightMeters.toFixed(1)}m — ${revP.supported ? 'SUPPORTED' : 'NOT SUPPORTED'}</td></tr>
+<tr><td class="label">Physics</td><td>${geoP.deg.toFixed(1)}° vs ${geoP.min}-${geoP.max}° — ${geoP.violation ? 'PHYSICS VIOLATION' : 'POSSIBLE'}</td></tr>
+<tr><td class="label">Bankable (internal)</td><td>${bankP.bankableTonnes.toFixed(1)} T (haircut ${bankP.haircutPct.toFixed(1)}%)</td></tr>
+<tr><td class="label">AI likelihood (ultra)</td><td>${ultraScore ? `${Math.round(ultraScore.probability_ai * 100)}% (${ultraScore.label})` : 'detector unavailable'}</td></tr>
 </table>
 <div class="label mono">Visual Evidence</div>
 <img src="${photo.dataUrl}" alt="Audit evidence" />
@@ -783,7 +823,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 
       {/* --- PREVIEW — is this the right frame? --- */}
       {phase === 'preview' && photo && (
-        <div className="washi-enter">
+        <div className="washi-enter space-y-4">
           <figure className="washi-sheet overflow-hidden">
             <div className="bg-[#221A12] p-2 sm:p-3">
               <SafeImage src={photo.dataUrl} alt="The grain pile, as photographed" className="w-full max-h-[440px] object-contain rounded-[8px]" />
@@ -793,6 +833,14 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
               <span className="font-mono text-[11px] text-[#8A7D68]">{photo.width} × {photo.height} · {photo.sizeKB} KB</span>
             </figcaption>
           </figure>
+          <PhotoGateBanner quality={photoQuality} />
+          <AiWarningBanner ai={photoAi} />
+          <UltraScoreCard
+            score={ultraScore}
+            pending={ultraPending}
+            ai={photoAi}
+            onRetry={() => photo && void refreshProofGates(photo, photo.name)}
+          />
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-5">
             <button
               type="button"
@@ -840,6 +888,17 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             <p className="ml-auto font-mono text-[11px] text-[#8A7D68] hidden sm:block text-right leading-relaxed">
               {liveVolume} m³<br />alive
             </p>
+          </div>
+          {/* Camera-section gate: same verdict as preview, right where you measure */}
+          <div className="px-5 sm:px-7 pt-4 space-y-3">
+            <PhotoGateBanner quality={photoQuality} />
+            <AiWarningBanner ai={photoAi} />
+            <UltraScoreCard
+              score={ultraScore}
+              pending={ultraPending}
+              ai={photoAi}
+              onRetry={() => photo && void refreshProofGates(photo, photo.name)}
+            />
           </div>
 
           {/* Shape */}
@@ -1172,13 +1231,67 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
               Paper says {runDeclared.toFixed(1)} T ({declaredTouched ? 'your hand' : 'registry'}). The pile suggests {estimationResult.centralEstimateTonnes.toFixed(1)} T.
             </p>
 
-          {/* What was analyzed — the two sides, side by side, unboxed */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-8 text-left">
+          {/* Proof chain — reverse → physics → bankable (same math, one story) */}
+          {(() => {
+            const rev = reverseProof(runDeclared, baseDiameterMeters, heightMeters, {
+              grainType, season, humidityPercent, compaction, storageDays,
+            });
+            const geo = reposeVerdict(heightMeters, baseDiameterMeters);
+            const reqDeg = reposeDeg(rev.requiredHeightM, baseDiameterMeters);
+            const bank = bankableTonnes(
+              estimationResult.rangeLowTonnes, estimationResult.confidencePercent, humidityPercent, true,
+            );
+            const price = parseFloat(priceText);
+            return (
+              <div className="mt-8 space-y-4 text-left">
+                <div className="text-center font-mono text-[11px] text-[#8A7D68]">
+                  {runDeclared.toFixed(1)}T CLAIMED · {bank.bankableTonnes.toFixed(1)}T DEFENSIBLE ·{' '}
+                  <span className={rev.supported ? 'text-[#4A6B4F]' : 'text-[#9C4A42]'}>
+                    {rev.supported ? 'CLAIM SUPPORTED' : 'CLAIM NOT SUPPORTED'}
+                  </span>
+                </div>
+                <ReverseProofBlock proof={rev} />
+                <PhysicsCheckBlock verdict={geo} requiredDeg={reqDeg} />
+                <div className="washi-sheet px-5 py-4">
+                  <label className="block">
+                    <span className="eyebrow-quiet">Price ₹/tonne (optional — for collateral value)</span>
+                    <input
+                      type="number" min="0" inputMode="numeric" value={priceText}
+                      onChange={(e) => setPriceText(e.target.value)}
+                      placeholder="e.g. 26000"
+                      className="mt-1 w-full bg-transparent font-mono text-lg text-[#2A2118] border-b border-[rgba(42,33,24,0.2)] focus:outline-none pb-1"
+                    />
+                  </label>
+                </div>
+                <BankableBlock
+                  bankable={bank}
+                  claimed={runDeclared}
+                  rangeLow={estimationResult.rangeLowTonnes}
+                  rangeHigh={estimationResult.rangeHighTonnes}
+                  pricePerTonne={Number.isFinite(price) && price > 0 ? price : undefined}
+                />
+              </div>
+            );
+          })()}
+
+          {/* What was analyzed — the pile, large and clear */}
+          <div className="mt-8 text-left">
+            <p className="eyebrow-quiet mb-2">Whole pile → geometry → calculation</p>
+            <div className="space-y-3 mb-4">
+              <AiWarningBanner ai={photoAi} />
+              <UltraScoreCard
+                score={ultraScore}
+                pending={ultraPending}
+                ai={photoAi}
+                onRetry={() => photo && void refreshProofGates(photo, photo.name)}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <figure>
               <div className="rounded-[12px] overflow-hidden border border-[rgba(42,33,24,0.12)] bg-[#221A12] p-1.5">
-                <SafeImage src={photo.dataUrl} alt="The pile you photographed" className="w-full h-52 object-cover rounded-[8px]" />
+                <SafeImage src={photo.dataUrl} alt="The pile you photographed" className="w-full h-72 sm:h-80 object-cover rounded-[8px]" />
               </div>
-              <figcaption className="font-mono text-[11px] text-[#8A7D68] mt-2">The pile · {photo.sizeKB} KB</figcaption>
+              <figcaption className="font-mono text-[11px] text-[#8A7D68] mt-2">The pile · {photo.sizeKB} KB · {photo.width}×{photo.height}</figcaption>
             </figure>
             <figure>
               {receiptPhoto ? (
@@ -1194,6 +1307,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                 </div>
               )}
             </figure>
+          </div>
           </div>
 
           {/* Why it matters — in plain words */}
