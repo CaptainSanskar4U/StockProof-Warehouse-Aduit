@@ -143,45 +143,19 @@ export const DetectReportCard: React.FC<{
   }
   const rows = [primary, cross].filter((r): r is DetectFinding => !!r);
   const aiVotes = rows.filter((r) => r.label === 'ai').length;
-  const tone =
-    aiVotes === rows.length && rows.length > 0
-      ? { bg: 'bg-[#9C4A42] text-white', word: 'LIKELY AI-GENERATED', dot: '#9C4A42' }
-      : aiVotes === 0
-        ? { bg: 'bg-[#4A6B4F] text-white', word: 'LIKELY REAL', dot: '#4A6B4F' }
-        : { bg: 'bg-[#A87F2A] text-white', word: 'UNCERTAIN · BACKENDS DISAGREE', dot: '#A87F2A' };
+  const bothAi = rows.length > 0 && aiVotes === rows.length;
+  const bothReal = rows.length > 0 && aiVotes === 0;
+  const pct = Math.round(Math.max(...rows.map((r) => (bothAi ? r.probability_ai : r.probability_real))) * 100);
+  const tone = bothAi
+    ? { bg: 'bg-[#9C4A42] text-white', text: `This image is AI-generated (${pct}% sure)`, dot: '#9C4A42' }
+    : bothReal
+      ? { bg: 'bg-[#4A6B4F] text-white', text: `This image looks real (${pct}% sure)`, dot: '#4A6B4F' }
+      : { bg: 'bg-[#A87F2A] text-white', text: 'Inconclusive — detectors disagree', dot: '#A87F2A' };
   return (
-    <div className="washi-sheet px-5 py-4">
-      <div className="flex items-center gap-3">
-        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: tone.dot }} />
-        <p className="eyebrow-quiet">AI-image report · ultra + sentry cross-check</p>
-        <span className={`ml-auto px-3 py-1 rounded-full font-mono text-[11px] font-bold ${tone.bg}`}>{tone.word}</span>
-      </div>
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full font-mono text-[11px] text-[#2A2118]">
-          <thead>
-            <tr className="text-left text-[#8A7D68]">
-              <th className="pr-3 py-1 font-normal">Backend</th>
-              <th className="pr-3 py-1 font-normal">Label</th>
-              <th className="pr-3 py-1 font-normal">AI Prob</th>
-              <th className="pr-3 py-1 font-normal">Real Prob</th>
-              <th className="py-1 font-normal">Confidence</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.backend} className="border-t border-[rgba(42,33,24,0.1)]">
-                <td className="pr-3 py-1.5">{r.backend}</td>
-                <td className="pr-3 py-1.5 font-bold">{r.label === 'ai' ? 'AI' : 'REAL'}</td>
-                <td className="pr-3 py-1.5">{r.probability_ai.toFixed(3)}</td>
-                <td className="pr-3 py-1.5">{r.probability_real.toFixed(3)}</td>
-                <td className="py-1.5">{r.confidence.toFixed(3)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {pending && <p className="font-mono text-[11px] text-[#8A7D68] mt-2 animate-pulse">Cross-check still reading…</p>}
-      <p className="font-mono text-[11px] text-[#8A7D68] mt-2">AI image detection is probabilistic. Treat the output as one signal, not as proof.</p>
+    <div className="washi-sheet px-4 py-3 flex items-center gap-3">
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: tone.dot }} />
+      <p className={`font-mono text-[12px] font-bold ${tone.bg} px-3 py-1.5 rounded-full`}>{tone.text}</p>
+      {pending && <span className="font-mono text-[11px] text-[#8A7D68] animate-pulse ml-auto">cross-check…</span>}
     </div>
   );
 };
