@@ -1,5 +1,3 @@
-<img src="assets/stockproof-night.svg" alt="Night audit over the grain pile — the auditor's torch sweeps the godown" width="100%" />
-
 <div align="center">
 
 *the auditor's torch · every sweep is a verification run — geometry in, defensible range out*</div>
