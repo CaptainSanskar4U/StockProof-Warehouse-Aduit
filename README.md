@@ -6,10 +6,6 @@
 
 <div align="center">
 
-<a href="https://git.io/typing-svg"><img src="https://readme-typing-svg.demolab.com?size=25&duration=3000&pause=1300&color=D9A441&center=true&vCenter=true&width=640&lines=Is+the+grain+really+there%3F;Geometry+in%2C+defensible+range+out.;Never+false+precision.;One+photo+against+the+paper+receipt." alt="typing story" /></a>
-
-<br />
-
 <img src="https://img.shields.io/badge/React-19-141210?style=flat&logo=react&logoColor=D9A441" alt="React 19" />
 <img src="https://img.shields.io/badge/Vite-6-141210?style=flat&logo=vite&logoColor=D9A441" alt="Vite 6" />
 <img src="https://img.shields.io/badge/Tailwind-4-141210?style=flat&logo=tailwindcss&logoColor=D9A441" alt="Tailwind 4" />
