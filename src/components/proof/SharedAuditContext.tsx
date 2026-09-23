@@ -144,34 +144,32 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
     setDetectCross(null);
     setDetectPending(true);
     const timer = setTimeout(() => ctrl.abort(), DETECT_TIMEOUT_MS);
-    const postOne = async (url: string): Promise<DetectFinding | null> => {
-      const res = await fetch(url, {
+    const parseFinding = (data: unknown): DetectFinding | null => {
+      const d = data as Record<string, unknown>;
+      if (typeof d?.probability_ai !== 'number' || typeof d?.label !== 'string') return null;
+      return {
+        label: d.label,
+        probability_ai: d.probability_ai,
+        probability_real: typeof d.probability_real === 'number' ? d.probability_real : 1 - d.probability_ai,
+        confidence: typeof d.confidence === 'number' ? d.confidence : 0.5,
+        raw_score: typeof d.raw_score === 'number' ? d.raw_score : 0,
+        backend: typeof d.backend === 'string' ? d.backend : 'unknown',
+        filename: typeof d.filename === 'string' ? d.filename : undefined,
+      };
+    };
+    try {
+      // One call returns {primary, cross} — primary + cross-check backends.
+      const res = await fetch('/api/ai-detect', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ dataUrl: p.dataUrl, filename: p.name }),
         signal: ctrl.signal,
       });
-      if (!res.ok) return null;
-      const data = (await res.json()) as Record<string, unknown>;
-      if (typeof data.probability_ai !== 'number' || typeof data.label !== 'string') return null;
-      return {
-        label: data.label,
-        probability_ai: data.probability_ai,
-        probability_real: typeof data.probability_real === 'number' ? data.probability_real : 1 - data.probability_ai,
-        confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
-        raw_score: typeof data.raw_score === 'number' ? data.raw_score : 0,
-        backend: typeof data.backend === 'string' ? data.backend : 'unknown',
-        filename: typeof data.filename === 'string' ? data.filename : undefined,
-      };
-    };
-    try {
-      const [primary, cross] = await Promise.all([
-        postOne('/api/ai-detect'),
-        postOne('/api/ai-detect-crosscheck'),
-      ]);
       if (token !== detectToken.current) return;
-      setDetectPrimary(primary);
-      setDetectCross(cross);
+      if (!res.ok) return;
+      const data = (await res.json()) as { primary?: unknown; cross?: unknown };
+      setDetectPrimary(parseFinding(data.primary));
+      setDetectCross(parseFinding(data.cross));
     } catch {
       // Timeout / offline / warming up — card shows unavailable + Retry.
     } finally {

@@ -5,16 +5,20 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/reviews/:id",
+      "destination": "/api/reviews?id=:id"
+    },
+    {
+      "source": "/api/warehouses/:id",
+      "destination": "/api/warehouses?id=:id"
+    },
+    {
       "source": "/((?!api/|assets/|favicon\\.svg).*)",
       "destination": "/index.html"
     }
   ],
   "functions": {
     "api/ai-detect.ts": {
-      "memory": 512,
-      "maxDuration": 30
-    },
-    "api/ai-detect-crosscheck.ts": {
       "memory": 512,
       "maxDuration": 30
     },

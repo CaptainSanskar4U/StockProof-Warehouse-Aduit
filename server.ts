@@ -72,41 +72,45 @@ async function startServer() {
   async function detectHandler(
     req: express.Request,
     res: express.Response,
-    upstreamBase: string,
-    hfModel: string,
   ) {
     const body = (req.body ?? {}) as { dataUrl?: unknown; filename?: unknown };
     const dataUrl = typeof body.dataUrl === 'string' ? body.dataUrl : '';
     const filename = typeof body.filename === 'string' ? body.filename : undefined;
     if (!dataUrl) return res.status(400).json({ error: 'dataUrl required' });
-    try {
-      const { buf, contentType } = await resolveImageBytes(dataUrl);
-      const text = await forwardDetect(upstreamBase, buf, contentType, filename || 'photo.jpg');
-      // Preserve their response shape (add filename if sidecar omitted it).
+
+    // Try one side: local sidecar first, HF cloud on failure.
+    const detectOne = async (upstreamBase: string, hfModel: string) => {
       try {
-        const parsed = JSON.parse(text) as Record<string, unknown>;
-        if (filename && typeof parsed.filename !== 'string') parsed.filename = filename;
-        return res.json(parsed);
+        const { buf, contentType } = await resolveImageBytes(dataUrl);
+        const text = await forwardDetect(upstreamBase, buf, contentType, filename || 'photo.jpg');
+        try {
+          const parsed = JSON.parse(text) as Record<string, unknown>;
+          if (filename && typeof parsed.filename !== 'string') parsed.filename = filename;
+          return parsed;
+        } catch {
+          return null;
+        }
       } catch {
-        return res.type('application/json').send(text);
+        try {
+          return await detectWithHF(dataUrl, filename, hfModel, process.env.HF_TOKEN);
+        } catch {
+          return null;
+        }
       }
-    } catch {
-      // Sidecar down — same HF path as the deployed site.
-      try {
-        const finding = await detectWithHF(dataUrl, filename, hfModel, process.env.HF_TOKEN);
-        return res.json(finding);
-      } catch {
-        return res.status(503).json({ error: 'AI detector unavailable', unavailable: true });
-      }
+    };
+
+    const [primary, cross] = await Promise.all([
+      detectOne(AI_PRIMARY_URL, HF_PRIMARY_MODEL),
+      detectOne(AI_XCHECK_URL, HF_XCHECK_MODEL),
+    ]);
+    if (!primary && !cross) {
+      return res.status(503).json({ error: 'AI detector unavailable', unavailable: true });
     }
+    return res.json({ primary, cross });
   }
 
-  app.post('/api/ai-detect', (req, res) =>
-    detectHandler(req, res, AI_PRIMARY_URL, HF_PRIMARY_MODEL),
-  );
-  app.post('/api/ai-detect-crosscheck', (req, res) =>
-    detectHandler(req, res, AI_XCHECK_URL, HF_XCHECK_MODEL),
-  );
+  // One call, both backends — matches the deployed api/ai-detect.ts shape.
+  app.post('/api/ai-detect', (req, res) => detectHandler(req, res));
 
   // Detector status for the camera tab (their /health shape, per backend).
   app.get('/api/ai-detectors', async (_req, res) => {
