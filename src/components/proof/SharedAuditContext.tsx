@@ -1,10 +1,8 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import type { CompactionLevel, GrainType, Season } from '../../types.js';
 import {
-  evaluateAiSuspicion,
   evaluatePhotoQuality,
   laplacianVariance,
-  type AiSuspicion,
   type PhotoQuality,
 } from '../../proofMath.js';
 
@@ -19,15 +17,29 @@ export interface PhotoState {
   meanLuma: number;
 }
 
-/** Detector verdict from the local Python sidecar (null = unavailable → heuristic fallback).
- * label/confidence use the model's own calibrated threshold (sentry @ 0.05) —
- * never judge probability_ai against a hardcoded 0.5/0.65. */
-export interface UltraScore {
-  probability_ai: number;
+/** One backend verdict, exactly their DetectionResult shape
+ * (aidetector/types.py) + optional filename. Primary = ultra,
+ * cross-check = sentry-convnext-small. */
+export interface DetectFinding {
   label: string;
-  backend: string;
+  probability_ai: number;
+  probability_real: number;
   confidence: number;
-  threshold: number;
+  raw_score: number;
+  backend: string;
+  filename?: string;
+}
+
+// Their servers answer one image at a time on field CPU — never hang the
+// camera tab: abort stale reads, 150s cap per photo.
+const DETECT_TIMEOUT_MS = 150000;
+
+async function dataUrlToBlob(dataUrl: string, fallbackName: string): Promise<{ blob: Blob; name: string }> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
+  const name = fallbackName.includes('.') ? fallbackName : `${fallbackName}.${ext}`;
+  return { blob, name };
 }
 
 export const SHARED_DEFAULTS = {
@@ -39,37 +51,6 @@ export const SHARED_DEFAULTS = {
   compaction: 'medium' as CompactionLevel,
   storageDays: 25,
 };
-
-// Small fast payload just for the detector: 640px JPEG. The audit keeps the
-// full-res preview; ultra only needs enough pixels to judge synthetic traces.
-function makeDetectPayload(dataUrl: string): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const S = 640;
-        const scale = Math.min(1, S / Math.max(img.width, img.height));
-        const w = Math.max(1, Math.round(img.width * scale));
-        const h = Math.max(1, Math.round(img.height * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve(dataUrl);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.72));
-      } catch {
-        resolve(dataUrl);
-      }
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
-
-// Field CPU takes minutes per ultra read and the sidecar serves one at a time.
-// Never let the camera tab hang: 60s client timeout, abort stale reads.
-const ULTRA_TIMEOUT_MS = 60000;
 
 // Offline blur estimate: 64px thumb, Laplacian variance. Higher = sharper.
 function measureBlurVariance(dataUrl: string): Promise<number> {
@@ -103,11 +84,12 @@ interface SharedAudit {
   photo: PhotoState | null;
   setPhoto: (p: PhotoState | null) => void;
   photoQuality: PhotoQuality | null;
-  photoAi: AiSuspicion | null;
-  ultraScore: UltraScore | null;
-  ultraPending: boolean;
+  detectPrimary: DetectFinding | null;
+  detectCross: DetectFinding | null;
+  detectPending: boolean;
   clearPhoto: () => void;
-  refreshProofGates: (p: PhotoState, fileName: string) => Promise<void>;
+  refreshPhotoGate: (p: PhotoState) => Promise<void>;
+  runDetection: (p: PhotoState) => Promise<void>;
   heightMeters: number;
   setHeightMeters: (v: number) => void;
   baseDiameterMeters: number;
@@ -135,10 +117,11 @@ const Ctx = createContext<SharedAudit | null>(null);
 export function SharedAuditProvider({ children }: { children: React.ReactNode }) {
   const [photo, setPhotoState] = useState<PhotoState | null>(null);
   const [photoQuality, setPhotoQuality] = useState<PhotoQuality | null>(null);
-  const [photoAi, setPhotoAi] = useState<AiSuspicion | null>(null);
-  const [ultraScore, setUltraScore] = useState<UltraScore | null>(null);
-  const [ultraPending, setUltraPending] = useState(false);
-  const ultraToken = useRef(0);
+  const [detectPrimary, setDetectPrimary] = useState<DetectFinding | null>(null);
+  const [detectCross, setDetectCross] = useState<DetectFinding | null>(null);
+  const [detectPending, setDetectPending] = useState(false);
+  const detectToken = useRef(0);
+  const detectCtrl = useRef<AbortController | null>(null);
   const [heightMeters, setHeightMeters] = useState(SHARED_DEFAULTS.heightM);
   const [baseDiameterMeters, setBaseDiameterMeters] = useState(SHARED_DEFAULTS.diameterM);
   const [grainType, setGrainType] = useState<GrainType>(SHARED_DEFAULTS.grain);
@@ -149,94 +132,95 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
   const [declaredText, setDeclaredText] = useState('');
   const [declaredTouched, setDeclaredTouched] = useState(false);
   const [priceText, setPriceText] = useState('');
-  const ultraCtrl = useRef<AbortController | null>(null);
 
-  const refreshProofGates = useCallback(async (p: PhotoState, fileName: string) => {
+  const refreshPhotoGate = useCallback(async (p: PhotoState) => {
     const blur = await measureBlurVariance(p.dataUrl);
     setPhotoQuality(
       evaluatePhotoQuality({ width: p.width, height: p.height, sizeKB: p.sizeKB, meanLuma: p.meanLuma, blurVariance: blur }),
     );
-    setPhotoAi(
-      evaluateAiSuspicion({ fileName, width: p.width, height: p.height, sizeKB: p.sizeKB, meanLuma: p.meanLuma, blurVariance: blur }),
-    );
-    // Ultra ensemble in background — never blocks. Stale responses are dropped
-    // when the auditor has already moved to another photo; the previous
-    // in-flight read is aborted so the single-worker sidecar never queues up.
-    ultraCtrl.current?.abort();
+  }, []);
+
+  // Score the pile photo with their detectors, exactly their protocol:
+  // multipart `file` field, their DetectionResult JSON back. Primary ultra +
+  // sentry cross-check in parallel; stale photos abort so the single-worker
+  // sidecars never queue. Never blocks the audit.
+  const runDetection = useCallback(async (p: PhotoState) => {
+    detectCtrl.current?.abort();
     const ctrl = new AbortController();
-    ultraCtrl.current = ctrl;
-    const token = ++ultraToken.current;
-    setUltraScore(null);
-    setUltraPending(true);
-    const timer = setTimeout(() => ctrl.abort(), ULTRA_TIMEOUT_MS);
-    try {
-      const payload = await makeDetectPayload(p.dataUrl);
-      if (token !== ultraToken.current) return; // superseded while shrinking
-      const res = await fetch('/api/ai-detect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: payload }),
-        signal: ctrl.signal,
-      });
-      if (!res.ok) return; // detector unavailable -> heuristic banner stays
-      const data = (await res.json()) as {
-        probability_ai?: number;
-        label?: string;
-        backend?: string;
-        confidence?: number;
-        threshold?: number;
+    detectCtrl.current = ctrl;
+    const token = ++detectToken.current;
+    setDetectPrimary(null);
+    setDetectCross(null);
+    setDetectPending(true);
+    const timer = setTimeout(() => ctrl.abort(), DETECT_TIMEOUT_MS);
+    const postOne = async (url: string): Promise<DetectFinding | null> => {
+      const { blob, name } = await dataUrlToBlob(p.dataUrl, p.name);
+      const form = new FormData();
+      form.append('file', blob, name);
+      const res = await fetch(url, { method: 'POST', body: form, signal: ctrl.signal });
+      if (!res.ok) return null;
+      const data = (await res.json()) as Record<string, unknown>;
+      if (typeof data.probability_ai !== 'number' || typeof data.label !== 'string') return null;
+      return {
+        label: data.label,
+        probability_ai: data.probability_ai,
+        probability_real: typeof data.probability_real === 'number' ? data.probability_real : 1 - data.probability_ai,
+        confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
+        raw_score: typeof data.raw_score === 'number' ? data.raw_score : 0,
+        backend: typeof data.backend === 'string' ? data.backend : 'unknown',
+        filename: typeof data.filename === 'string' ? data.filename : undefined,
       };
-      if (token !== ultraToken.current) return;
-      if (typeof data.probability_ai === 'number') {
-        setUltraScore({
-          probability_ai: data.probability_ai,
-          label: typeof data.label === 'string' ? data.label : 'unknown',
-          backend: typeof data.backend === 'string' ? data.backend : 'ultra',
-          confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
-          threshold: typeof data.threshold === 'number' ? data.threshold : 0.033,
-        });
-      }
+    };
+    try {
+      const [primary, cross] = await Promise.all([
+        postOne('/api/ai-detect'),
+        postOne('/api/ai-detect-crosscheck'),
+      ]);
+      if (token !== detectToken.current) return;
+      setDetectPrimary(primary);
+      setDetectCross(cross);
     } catch {
-      // Timeout / offline / detector warming up — heuristic warning already
-      // shown; card flips to "unavailable + Retry" instead of hanging.
+      // Timeout / offline / warming up — card shows unavailable + Retry.
     } finally {
       clearTimeout(timer);
-      if (token === ultraToken.current) setUltraPending(false);
+      if (token === detectToken.current) setDetectPending(false);
     }
   }, []);
 
   const setPhoto = useCallback((p: PhotoState | null) => {
     setPhotoState(p);
     if (!p) {
-      ultraCtrl.current?.abort();
-      ultraToken.current += 1;
+      detectCtrl.current?.abort();
+      detectToken.current += 1;
       setPhotoQuality(null);
-      setPhotoAi(null);
-      setUltraScore(null);
-      setUltraPending(false);
+      setDetectPrimary(null);
+      setDetectCross(null);
+      setDetectPending(false);
     }
   }, []);
 
   const clearPhoto = useCallback(() => {
     setPhotoState(null);
-    ultraCtrl.current?.abort();
-    ultraToken.current += 1;
+    detectCtrl.current?.abort();
+    detectToken.current += 1;
     setPhotoQuality(null);
-    setPhotoAi(null);
-    setUltraScore(null);
-    setUltraPending(false);
+    setDetectPrimary(null);
+    setDetectCross(null);
+    setDetectPending(false);
   }, []);
 
   const value = useMemo(
     () => ({
-      photo, setPhoto, photoQuality, photoAi, ultraScore, ultraPending, clearPhoto, refreshProofGates,
+      photo, setPhoto, photoQuality, clearPhoto, refreshPhotoGate,
+      detectPrimary, detectCross, detectPending, runDetection,
       heightMeters, setHeightMeters, baseDiameterMeters, setBaseDiameterMeters,
       grainType, setGrainType, season, setSeason, humidityPercent, setHumidityPercent,
       compaction, setCompaction, storageDays, setStorageDays,
       declaredText, setDeclaredText, declaredTouched, setDeclaredTouched,
       priceText, setPriceText,
     }),
-    [photo, photoQuality, photoAi, ultraScore, ultraPending, clearPhoto, refreshProofGates,
+    [photo, photoQuality, clearPhoto, refreshPhotoGate,
+      detectPrimary, detectCross, detectPending, runDetection,
       heightMeters, baseDiameterMeters, grainType, season, humidityPercent,
       compaction, storageDays, declaredText, declaredTouched, priceText, setPhoto],
   );

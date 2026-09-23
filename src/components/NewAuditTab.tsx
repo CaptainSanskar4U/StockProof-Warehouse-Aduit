@@ -21,12 +21,11 @@ import {
 } from '../proofMath.js';
 import { useSharedAudit, type PhotoState } from './proof/SharedAuditContext.js';
 import {
-  AiWarningBanner,
   BankableBlock,
+  DetectReportCard,
   PhotoGateBanner,
   PhysicsCheckBlock,
   ReverseProofBlock,
-  UltraScoreCard,
 } from './proof/ProofBlocks.js';
 import {
   Camera,
@@ -187,7 +186,8 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
   // Reverse / Geometry / Bankable tabs always see the same audit.
   const {
     photo, setPhoto,
-    photoQuality, photoAi, ultraScore, ultraPending, clearPhoto, refreshProofGates,
+    photoQuality, clearPhoto, refreshPhotoGate,
+    detectPrimary, detectCross, detectPending, runDetection,
     heightMeters, setHeightMeters,
     baseDiameterMeters, setBaseDiameterMeters,
     grainType, setGrainType,
@@ -323,7 +323,7 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       setPhoto(next);
       setPhase('preview');
       setShowChooser(false);
-      void refreshProofGates(next, file.name);
+      void refreshPhotoGate(next); void runDetection(next);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Could not process that image. Try a different file.');
     }
@@ -362,7 +362,7 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       const processed = await processImageFile(file);
       const next = { ...processed, name: 'sample-wheat-pile.jpg', source: 'upload' as const };
       setPhoto(next);
-      void refreshProofGates(next, 'sample-wheat-pile.jpg');
+      void refreshPhotoGate(next); void runDetection(next);
     } catch {
       const fallback = {
         dataUrl: SAMPLE_GRAIN_IMAGES.wheat_pile,
@@ -374,7 +374,7 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
         meanLuma: 128,
       };
       setPhoto(fallback);
-      void refreshProofGates(fallback, 'sample-wheat-pile.jpg');
+      void refreshPhotoGate(fallback); void runDetection(fallback);
     } finally {
       setLoadingSample(false);
       setPhase('preview');
@@ -442,7 +442,7 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       setPhase('preview');
       setShowChooser(false);
       setErrorMsg(null);
-      void refreshProofGates(next, next.name);
+      void refreshPhotoGate(next); void runDetection(next);
     } catch {
       setCameraError('Could not capture a frame on this device. Try “Upload from Device”.');
     }
@@ -575,8 +575,8 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       ['Declared source', declaredTouched ? 'manual entry' : 'registry value'],
       ['Receipt photo attached', receiptPhoto ? 'yes' : 'no'],
       ['Photo quality', photoQuality ? (photoQuality.ok ? 'FULL PILE VISIBLE' : `NOT SUITABLE: ${photoQuality.reasons.join('; ')}`) : 'not checked'],
-      ['AI suspicion (0-100, heuristic only)', photoAi ? String(photoAi.score) : 'not checked'],
-      ['AI likelihood (detector)', ultraScore ? `${Math.round(ultraScore.probability_ai * 100)}% (${ultraScore.label}, ${ultraScore.backend})` : 'detector unavailable'],
+      ['AI-image ultra', detectPrimary ? `${detectPrimary.label} (AI ${detectPrimary.probability_ai.toFixed(3)} / real ${detectPrimary.probability_real.toFixed(3)} / conf ${detectPrimary.confidence.toFixed(3)})` : (detectPending ? 'reading…' : 'detector unavailable')],
+      ['AI-image sentry cross-check', detectCross ? `${detectCross.label} (AI ${detectCross.probability_ai.toFixed(3)} / real ${detectCross.probability_real.toFixed(3)} / conf ${detectCross.confidence.toFixed(3)})` : (detectPending ? 'reading…' : 'detector unavailable')],
       ['Estimated (T)', estimationResult.centralEstimateTonnes.toFixed(1)],
       ['Range Low (T)', estimationResult.rangeLowTonnes.toFixed(1)],
       ['Range High (T)', estimationResult.rangeHighTonnes.toFixed(1)],
@@ -649,7 +649,8 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 <tr><td class="label">Reverse proof</td><td>${runDeclared.toFixed(1)}T needs ${revP.requiredVolumeM3.toFixed(0)} m³ / ${revP.requiredHeightM.toFixed(1)}m height vs measured ${heightMeters.toFixed(1)}m — ${revP.supported ? 'SUPPORTED' : 'NOT SUPPORTED'}</td></tr>
 <tr><td class="label">Physics</td><td>${geoP.deg.toFixed(1)}° vs ${geoP.min}-${geoP.max}° — ${geoP.violation ? 'PHYSICS VIOLATION' : 'POSSIBLE'}</td></tr>
 <tr><td class="label">Bankable (internal)</td><td>${bankP.bankableTonnes.toFixed(1)} T (haircut ${bankP.haircutPct.toFixed(1)}%)</td></tr>
-<tr><td class="label">AI likelihood (detector)</td><td>${ultraScore ? `${Math.round(ultraScore.probability_ai * 100)}% (${ultraScore.label}, ${ultraScore.backend})` : 'detector unavailable'}</td></tr>
+<tr><td class="label">AI-image ultra</td><td>${detectPrimary ? `${detectPrimary.label} (AI ${detectPrimary.probability_ai.toFixed(3)})` : 'detector unavailable'}</td></tr>
+<tr><td class="label">AI-image sentry</td><td>${detectCross ? `${detectCross.label} (AI ${detectCross.probability_ai.toFixed(3)})` : 'detector unavailable'}</td></tr>
 </table>
 <div class="label mono">Visual Evidence</div>
 <img src="${photo.dataUrl}" alt="Audit evidence" />
@@ -834,12 +835,11 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             </figcaption>
           </figure>
           <PhotoGateBanner quality={photoQuality} />
-          <AiWarningBanner ai={photoAi} />
-          <UltraScoreCard
-            score={ultraScore}
-            pending={ultraPending}
-            ai={photoAi}
-            onRetry={() => photo && void refreshProofGates(photo, photo.name)}
+          <DetectReportCard
+            primary={detectPrimary}
+            cross={detectCross}
+            pending={detectPending}
+            onRetry={() => photo && void runDetection(photo)}
           />
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-5">
             <button
@@ -892,13 +892,6 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
           {/* Camera-section gate: same verdict as preview, right where you measure */}
           <div className="px-5 sm:px-7 pt-4 space-y-3">
             <PhotoGateBanner quality={photoQuality} />
-            <AiWarningBanner ai={photoAi} />
-            <UltraScoreCard
-              score={ultraScore}
-              pending={ultraPending}
-              ai={photoAi}
-              onRetry={() => photo && void refreshProofGates(photo, photo.name)}
-            />
           </div>
 
           {/* Shape */}
@@ -1278,12 +1271,11 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
           <div className="mt-8 text-left">
             <p className="eyebrow-quiet mb-2">Whole pile → geometry → calculation</p>
             <div className="space-y-3 mb-4">
-              <AiWarningBanner ai={photoAi} />
-              <UltraScoreCard
-                score={ultraScore}
-                pending={ultraPending}
-                ai={photoAi}
-                onRetry={() => photo && void refreshProofGates(photo, photo.name)}
+              <DetectReportCard
+                primary={detectPrimary}
+                cross={detectCross}
+                pending={detectPending}
+                onRetry={() => photo && void runDetection(photo)}
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

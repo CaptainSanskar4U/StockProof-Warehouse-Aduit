@@ -194,50 +194,6 @@ export function evaluatePhotoQuality(q: PhotoQualityInput): PhotoQuality {
   };
 }
 
-// ---------- AI / synthetic image suspicion (heuristic only, never blocks) ----------
-export interface AiSuspicionInput {
-  fileName: string;
-  width: number;
-  height: number;
-  sizeKB: number;
-  meanLuma: number;
-  blurVariance: number;
-}
-
-export interface AiSuspicion {
-  score: number; // 0-100
-  suspect: boolean;
-  reasons: string[];
-}
-
-const AI_NAME_HINTS = ['midjourney', 'dalle', 'dall-e', 'stable-diffusion', 'firefly', 'ai-generated', 'generated', 'synthetic', 'leonardo', 'bing-image'];
-
-export function evaluateAiSuspicion(inp: AiSuspicionInput): AiSuspicion {
-  const reasons: string[] = [];
-  let score = 0;
-  const name = (inp.fileName || '').toLowerCase();
-  if (AI_NAME_HINTS.some((h) => name.includes(h))) {
-    score += 45;
-    reasons.push('filename looks AI-generated');
-  }
-  const squareAI = inp.width === inp.height && [512, 768, 1024].includes(inp.width);
-  if (squareAI) {
-    score += 20;
-    reasons.push('square AI-typical size');
-  }
-  // Plasticky-smooth + vivid at high res is a weak synthetic hint, never proof.
-  if (inp.blurVariance > 0 && inp.blurVariance < 12 && Math.max(inp.width, inp.height) >= 1000) {
-    score += 15;
-    reasons.push('over-smooth texture for this resolution');
-  }
-  if (inp.sizeKB > 0 && Math.max(inp.width, inp.height) >= 1200 && inp.sizeKB < 50) {
-    score += 10;
-    reasons.push('too clean for a field photo');
-  }
-  score = Math.min(95, score);
-  return { score, suspect: score >= 50, reasons };
-}
-
 /** Laplacian variance on a small grayscale grid — caller builds the grid from canvas. */
 export function laplacianVariance(gray: number[], w: number, h: number): number {
   if (gray.length < 9 || w < 3 || h < 3) return 0;

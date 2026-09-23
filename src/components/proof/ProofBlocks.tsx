@@ -1,6 +1,6 @@
 import React from 'react';
-import type { ReverseProof, ReposeVerdict, BankableResult, PhotoQuality, AiSuspicion } from '../../proofMath.js';
-import type { UltraScore } from './SharedAuditContext.js';
+import type { ReverseProof, ReposeVerdict, BankableResult, PhotoQuality } from '../../proofMath.js';
+import type { DetectFinding } from './SharedAuditContext.js';
 
 /* Shared visual language: washi sheet, quiet eyebrow, serif numbers. */
 
@@ -105,51 +105,29 @@ export const PhotoGateBanner: React.FC<{ quality: PhotoQuality | null }> = ({ qu
   );
 };
 
-export const AiWarningBanner: React.FC<{ ai: AiSuspicion | null }> = ({ ai }) => {
-  if (!ai || !ai.suspect) return null;
-  return (
-    <div className="washi-well px-4 py-3 flex items-start gap-3">
-      <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#A87F2A] shrink-0" />
-      <div>
-        <p className="text-sm text-[#2A2118]"><strong>⚠️ Possible digitally created image ({ai.score}/100).</strong> Please confirm on-site. You can continue — this is a heuristic hint only, not proof.</p>
-        {ai.reasons.length > 0 && <p className="font-mono text-[11px] text-[#8A7D68] mt-1">{ai.reasons.join(' · ')}</p>}
-      </div>
-    </div>
-  );
-};
-
-/** Ultra ensemble verdict — the strong model. Warning only, never blocks.
- * Always visible once a photo exists: checking → verdict → unavailable.
- * `ai` is the offline heuristic fallback so the card never goes blank. */
-export const UltraScoreCard: React.FC<{
-  score: UltraScore | null;
+/* AI-image report — their table, their words. Primary ultra + sentry
+ * cross-check, exactly their DetectionResult fields. Agreement decides:
+ * both ai -> strong warning, split -> uncertain, both real -> likely real. */
+export const DetectReportCard: React.FC<{
+  primary: DetectFinding | null;
+  cross: DetectFinding | null;
   pending: boolean;
-  ai?: AiSuspicion | null;
   onRetry?: () => void;
-}> = ({ score, pending, ai, onRetry }) => {
-  if (!score) {
+}> = ({ primary, cross, pending, onRetry }) => {
+  if (!primary && !cross) {
     if (pending) {
       return (
         <div className="washi-sheet px-4 py-3 flex items-center gap-3">
           <span className="w-1.5 h-1.5 rounded-full bg-[#A87F2A] shrink-0 animate-pulse" />
-          <p className="font-mono text-[11px] text-[#8A7D68]">🛰️ AI detector reading this photo (up to ~1 min on field CPU)… you can continue meanwhile.</p>
+          <p className="font-mono text-[11px] text-[#8A7D68]">AI detectors reading this photo (ultra + sentry)… you can continue meanwhile.</p>
         </div>
       );
     }
-    // Detector offline — never hide. Show heuristic state so the user knows the check ran.
-    const heuristicBit =
-      ai && ai.suspect
-        ? `Heuristic: suspicious (${ai.score}/100 — ${ai.reasons.slice(0, 2).join(' · ')})`
-        : ai
-          ? `Heuristic: no AI traces (${ai.score}/100)`
-          : 'Heuristic only';
     return (
       <div className="washi-sheet px-4 py-3 flex items-center gap-3 border-dashed">
         <span className="w-1.5 h-1.5 rounded-full bg-[#8A7D68] shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="font-mono text-[11px] text-[#8A7D68]">
-            🛰️ AI detector warming up / unavailable — {heuristicBit}. Audit continues.
-          </p>
+          <p className="font-mono text-[11px] text-[#8A7D68]">AI detectors unavailable — start them with `aidetect api`. Audit continues.</p>
         </div>
         {onRetry && (
           <button
@@ -163,30 +141,48 @@ export const UltraScoreCard: React.FC<{
       </div>
     );
   }
-  const pct = Math.round(score.probability_ai * 100);
-  // Verdict follows the backend label (its own calibrated threshold), NOT the
-  // raw pct: model scores don't live on a 0-100 ruler, so 15% AI can mean AI.
-  // Strength comes from confidence in the predicted class.
-  const isAi = score.label === 'ai';
-  const strong = score.confidence >= 0.75;
-  const tone = isAi
-    ? strong
+  const rows = [primary, cross].filter((r): r is DetectFinding => !!r);
+  const aiVotes = rows.filter((r) => r.label === 'ai').length;
+  const tone =
+    aiVotes === rows.length && rows.length > 0
       ? { bg: 'bg-[#9C4A42] text-white', word: 'LIKELY AI-GENERATED', dot: '#9C4A42' }
-      : { bg: 'bg-[#A87F2A] text-white', word: 'UNCERTAIN · LEANING AI', dot: '#A87F2A' }
-    : strong
-      ? { bg: 'bg-[#4A6B4F] text-white', word: 'LIKELY REAL', dot: '#4A6B4F' }
-      : { bg: 'bg-[#A87F2A] text-white', word: 'UNCERTAIN · LEANING REAL', dot: '#A87F2A' };
+      : aiVotes === 0
+        ? { bg: 'bg-[#4A6B4F] text-white', word: 'LIKELY REAL', dot: '#4A6B4F' }
+        : { bg: 'bg-[#A87F2A] text-white', word: 'UNCERTAIN · BACKENDS DISAGREE', dot: '#A87F2A' };
   return (
-    <div className="washi-sheet px-5 py-4 flex items-center gap-4">
-      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: tone.dot }} />
-      <div className="flex-1 min-w-0">
-        <p className="eyebrow-quiet">AI-detector · {score.backend}</p>
-        <p className="mt-1 flex items-baseline gap-2 flex-wrap">
-          <span className="serif-reading text-3xl text-[#2A2118]">{pct}% AI</span>
-          <span className={`px-3 py-1 rounded-full font-mono text-[11px] font-bold ${tone.bg}`}>{tone.word}</span>
-        </p>
-        <p className="font-mono text-[11px] text-[#8A7D68] mt-1">Signal only, not proof · calibrated threshold {score.threshold} · audit continues either way</p>
+    <div className="washi-sheet px-5 py-4">
+      <div className="flex items-center gap-3">
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: tone.dot }} />
+        <p className="eyebrow-quiet">AI-image report · ultra + sentry cross-check</p>
+        <span className={`ml-auto px-3 py-1 rounded-full font-mono text-[11px] font-bold ${tone.bg}`}>{tone.word}</span>
       </div>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full font-mono text-[11px] text-[#2A2118]">
+          <thead>
+            <tr className="text-left text-[#8A7D68]">
+              <th className="pr-3 py-1 font-normal">Backend</th>
+              <th className="pr-3 py-1 font-normal">Label</th>
+              <th className="pr-3 py-1 font-normal">AI Prob</th>
+              <th className="pr-3 py-1 font-normal">Real Prob</th>
+              <th className="py-1 font-normal">Confidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.backend} className="border-t border-[rgba(42,33,24,0.1)]">
+                <td className="pr-3 py-1.5">{r.backend}</td>
+                <td className="pr-3 py-1.5 font-bold">{r.label === 'ai' ? 'AI' : 'REAL'}</td>
+                <td className="pr-3 py-1.5">{r.probability_ai.toFixed(3)}</td>
+                <td className="pr-3 py-1.5">{r.probability_real.toFixed(3)}</td>
+                <td className="py-1.5">{r.confidence.toFixed(3)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {pending && <p className="font-mono text-[11px] text-[#8A7D68] mt-2 animate-pulse">Cross-check still reading…</p>}
+      <p className="font-mono text-[11px] text-[#8A7D68] mt-2">AI image detection is probabilistic. Treat the output as one signal, not as proof.</p>
     </div>
   );
 };
+
