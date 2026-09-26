@@ -37,17 +37,6 @@ import { CheckCircle2, AlertOctagon, Info } from 'lucide-react';
 
 const AUTH_KEY = 'stockproof_auth';
 
-function getStoredRole(): LoginRole | null {
-  try {
-    const raw = localStorage.getItem(AUTH_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { role?: unknown };
-    return parsed.role === 'farmer' || parsed.role === 'inspector' ? parsed.role : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function App() {
   // Navigation state (single inspector identity comes from the saved Profile)
   const [currentView, setCurrentView] = useState<HeaderView>('overview');
@@ -59,7 +48,11 @@ export default function App() {
   const [role, setRole] = useState<LoginRole | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isConsoleLocked, setIsConsoleLocked] = useState(false);
-  const [pendingView, setPendingView] = useState<HeaderView | null>(null);
+  const [pendingIntent, setPendingIntent] = useState<{
+    view: HeaderView;
+    openReport?: boolean;
+    startSpecimen?: boolean;
+  } | null>(null);
   const [greeting, setGreeting] = useState<string | null>(null);
 
   // Data state
@@ -170,10 +163,18 @@ export default function App() {
   const isLanding = !activeVerificationWarehouse && currentView === 'overview' && role !== 'farmer';
 
   // --- Role handlers -----------------------------------------------------
-  // Landing CTA -> remember where they were headed, lock the console, ask who
-  // they are. Farmer goes to the farmer panel; Inspector reveals this page.
-  const handleEnterConsole = useCallback((view: HeaderView = 'dashboard') => {
-    setPendingView(view);
+  // Landing CTA -> navigate to the console FIRST, then lock it and ask who
+  // they are. The console is what sits blurred behind the modal; the landing
+  // page is never the backdrop. Both state updates land in one batch, so the
+  // very first paint already shows the console blurred and inert.
+  const handleEnterConsole = useCallback((
+    view: HeaderView = 'dashboard',
+    opts: { openReport?: boolean; startSpecimen?: boolean } = {},
+  ) => {
+    setPendingIntent({ view, ...opts });
+    // 'reports' is a Header action, not a render branch — normalise it here
+    // and let the login handler open the report modal instead.
+    setCurrentView(view === 'reports' ? 'dashboard' : view);
     setIsLoginOpen(true);
     setIsConsoleLocked(true);
   }, []);
@@ -183,16 +184,28 @@ export default function App() {
     setIsLoginOpen(false);
     setIsConsoleLocked(false);
     setGreeting(`Welcome${profile.email ? ` ${profile.email}` : ''} — signed in as ${profile.role}.`);
+    const intent = pendingIntent;
+    setPendingIntent(null);
     if (profile.role === 'farmer') return; // the farmer panel owns its own nav
-    if (pendingView) setCurrentView(pendingView);
-    else if (currentView === 'overview') setCurrentView('dashboard');
-  }, [pendingView, currentView]);
+    if (intent?.openReport) {
+      setIsReportModalOpen(true);
+      return;
+    }
+    if (intent?.startSpecimen) {
+      const specimenWh = warehouses.find((w) => w.id === 'wh-001') || warehouses[0];
+      if (specimenWh) {
+        setActiveVerificationWarehouse(specimenWh);
+        return;
+      }
+    }
+    setCurrentView(intent?.view ?? 'dashboard');
+  }, [pendingIntent, warehouses]);
 
   // Locked mode: no peeking at the panel. Backing out returns to the landing.
   const handleLoginClose = useCallback(() => {
     setIsLoginOpen(false);
     setIsConsoleLocked(false);
-    setPendingView(null);
+    setPendingIntent(null);
     if (!role) {
       setCurrentView('overview');
       setActiveVerificationWarehouse(null);
@@ -211,7 +224,7 @@ export default function App() {
     setRole(null);
     setIsLoginOpen(false);
     setIsConsoleLocked(false);
-    setPendingView(null);
+    setPendingIntent(null);
     setCurrentView('overview');
     setActiveVerificationWarehouse(null);
     setSelectedRecord(null);
@@ -352,17 +365,10 @@ export default function App() {
         ) : currentView === 'overview' ? (
           <LandingPageView
             onEnterConsole={() => handleEnterConsole('dashboard')}
-            onStartSampleVerification={() => {
-              const specimenWh = warehouses.find((w) => w.id === 'wh-001') || warehouses[0];
-              if (specimenWh) {
-                setActiveVerificationWarehouse(specimenWh);
-              } else {
-                handleEnterConsole('dashboard');
-              }
-            }}
+            onStartSampleVerification={() => handleEnterConsole('dashboard', { startSpecimen: true })}
             onOpenPhysics={() => setIsPhysicsModalOpen(true)}
             onOpenReviews={() => handleEnterConsole('reviews')}
-            onOpenReports={() => handleEnterConsole('dashboard')}
+            onOpenReports={() => handleEnterConsole('dashboard', { openReport: true })}
           />
         ) : currentView === 'reviews' ? (
           <div className="max-w-5xl mx-auto">
