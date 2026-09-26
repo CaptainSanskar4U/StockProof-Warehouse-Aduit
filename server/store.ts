@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { Warehouse, Verification, ReviewItem, PortfolioSummary, GrainType } from '../src/types.js';
+import { Warehouse, Verification, ReviewItem, PortfolioSummary, GrainType, FarmerCheck } from '../src/types.js';
 
 // Vercel serverless filesystem is read-only except /tmp — use it when deployed.
 const DATA_DIR = process.env.VERCEL
@@ -422,6 +422,7 @@ export interface StorageData {
   warehouses: Warehouse[];
   verifications: Verification[];
   reviews: ReviewItem[];
+  farmerChecks: FarmerCheck[];
 }
 
 class StorageManager {
@@ -444,6 +445,9 @@ class StorageManager {
         const fileContent = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(fileContent);
         if (parsed.warehouses && parsed.verifications && parsed.reviews) {
+          if (!Array.isArray(parsed.farmerChecks)) {
+            parsed.farmerChecks = [];
+          }
           return this.migrateLegacyData(parsed);
         }
       }
@@ -455,6 +459,7 @@ class StorageManager {
       warehouses: INITIAL_WAREHOUSES,
       verifications: INITIAL_VERIFICATIONS,
       reviews: INITIAL_REVIEWS,
+      farmerChecks: [],
     };
     this.saveData(defaultData);
     return defaultData;
@@ -529,15 +534,15 @@ class StorageManager {
     if (warehouseId) {
       return this.data.verifications
         .filter(v => v.warehouseId === warehouseId)
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        .sort((a, b) => (new Date(b.timestamp).getTime() || 0) - (new Date(a.timestamp).getTime() || 0));
     }
-    return [...this.data.verifications].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return [...this.data.verifications].sort((a, b) => (new Date(b.timestamp).getTime() || 0) - (new Date(a.timestamp).getTime() || 0));
   }
 
   /** Latest verification per warehouse — powers the console's declared-vs-estimated cards. */
   public getLatestVerificationPerWarehouse(): Record<string, Verification> {
     const sorted = [...this.data.verifications].sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      (a, b) => (new Date(b.timestamp).getTime() || 0) - (new Date(a.timestamp).getTime() || 0)
     );
     const latest: Record<string, Verification> = {};
     for (const v of sorted) {
@@ -589,15 +594,35 @@ class StorageManager {
     return verification;
   }
 
-  public getReviews(): ReviewItem[] {
-    return [...this.data.reviews].sort((a, b) => {
+  // ---- Farmer self-checks (namespaced; never part of Inspector queues) ----
+
+  public addFarmerCheck(check: FarmerCheck): FarmerCheck {
+    this.data.farmerChecks.unshift(check);
+    this.saveData(this.data);
+    return check;
+  }
+
+  public getFarmerCheckById(id: string): FarmerCheck | undefined {
+    return this.data.farmerChecks.find(c => c.id === id);
+  }
+
+  /** Read-only farmer history, exact name match (case-insensitive). */
+  public getFarmerChecksByFarmer(name: string): FarmerCheck[] {
+    const needle = name.trim().toLowerCase();
+    if (!needle) return [];
+    return this.data.farmerChecks
+      .filter(c => c.farmerName.trim().toLowerCase() === needle)
+      .sort((a, b) => (new Date(b.createdAt).getTime() || 0) - (new Date(a.createdAt).getTime() || 0));
+  }
+
+  public getReviews(): ReviewItem[] {    return [...this.data.reviews].sort((a, b) => {
       // Open items first, then sort by priority (urgent > medium > routine)
       if (a.status === 'open' && b.status !== 'open') return -1;
       if (a.status !== 'open' && b.status === 'open') return 1;
       const prioOrder: Record<string, number> = { urgent: 0, medium: 1, routine: 2 };
       const diff = (prioOrder[a.priority] ?? 2) - (prioOrder[b.priority] ?? 2);
       if (diff !== 0) return diff;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return (new Date(b.createdAt).getTime() || 0) - (new Date(a.createdAt).getTime() || 0);
     });
   }
 
@@ -659,10 +684,14 @@ class StorageManager {
   }
 
   public resetToDefaults() {
+    // Demo reset restores the Inspector seed data but NEVER wipes farmer
+    // self-checks — QR verification links must keep resolving.
+    const farmerChecks = this.data.farmerChecks;
     this.data = {
       warehouses: INITIAL_WAREHOUSES,
       verifications: INITIAL_VERIFICATIONS,
       reviews: INITIAL_REVIEWS,
+      farmerChecks,
     };
     this.saveData(this.data);
     return this.data;

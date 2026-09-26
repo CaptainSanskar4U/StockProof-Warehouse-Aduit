@@ -73,11 +73,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const overAmount = (w: Warehouse): number => {
     const latest = getLatest(w.id);
-    if (!latest) return -9999;
-    if (w.currentDeclaredTonnes > latest.estimate.rangeHigh) {
-      return w.currentDeclaredTonnes - latest.estimate.rangeHigh;
+    if (!latest?.estimate) return -9999;
+    const { rangeLow, rangeHigh } = latest.estimate;
+    if (!Number.isFinite(rangeLow) || !Number.isFinite(rangeHigh)) return -9999;
+    if (w.currentDeclaredTonnes > rangeHigh) {
+      return w.currentDeclaredTonnes - rangeHigh;
     }
-    if (w.currentDeclaredTonnes < latest.estimate.rangeLow) {
+    if (w.currentDeclaredTonnes < rangeLow) {
       return -0.5; // under-declared sorts below over-declared but above unverified
     }
     return 0;
@@ -441,7 +443,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="bg-[#F5F0E8] p-3.5 rounded-lg border border-[#3D3226]/10 my-2">
                 {(() => {
                   const latest = getLatest(w.id);
-                  if (!latest) {
+                  if (!latest?.estimate) {
                     return (
                       <div className="flex items-center justify-between">
                         <div>
@@ -526,7 +528,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="flex items-center justify-between text-[11px] font-mono text-[#2B2016]/55 pt-2 mt-2 border-t border-[#3D3226]/10">
                   <div className="flex items-center gap-1.5">
                     <Calendar className="w-3 h-3 text-[#B98A2E]" />
-                    <span>Last audited: {w.lastVerifiedDate ? new Date(w.lastVerifiedDate).toLocaleDateString() : 'Not verified'}</span>
+                    <span>Last audited: {w.lastVerifiedDate && !Number.isNaN(new Date(w.lastVerifiedDate).getTime()) ? new Date(w.lastVerifiedDate).toLocaleDateString() : 'Not verified'}</span>
                   </div>
                   <span className="text-[#2B2016]/55 truncate max-w-40">
                     {w.borrowerName}

@@ -15,16 +15,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       declaredTonnes?: number;
     }>(req);
     const { geometry, context, declaredTonnes } = body;
-    if (!geometry || !context || typeof declaredTonnes !== 'number') {
+    if (!geometry || !context || typeof declaredTonnes !== 'number' || !Number.isFinite(declaredTonnes)) {
       return res
         .status(400)
         .json({ error: 'Missing geometry, context, or declaredTonnes in request body' });
     }
 
     const normalizedContext = withSeasonDefaults(context);
+    const providedVolume = Number(geometry.calculatedVolumeM3);
     const calculatedVolume =
-      geometry.calculatedVolumeM3 > 0
-        ? geometry.calculatedVolumeM3
+      Number.isFinite(providedVolume) && providedVolume > 0
+        ? providedVolume
         : calculatePileVolume(
             geometry.heightMeters,
             geometry.baseDiameterMeters,

@@ -118,7 +118,7 @@ export interface ReviewItem {
   notes: string[];
   createdAt: string;
   resolvedAt?: string;
-  resolutionType?: 'stock_confirmed_physical' | 'shortfall_verified' | 're_audit_ordered' | 'false_positive_recalculated';
+  resolutionType?: 'stock_confirmed_physical' | 'shortfall_verified' | 're_audit_ordered' | 'false_positive_recalculated' | 'weighbridge_slips_verified';
 }
 
 export interface PortfolioSummary {
@@ -142,4 +142,36 @@ export interface UserProfile {
   designation: string;
   organization: string;
   badge: string;
+}
+
+/** Photo-authenticity verdict from the AI-image detectors. Stored explicitly —
+ *  'unchecked' (checker unreachable) is never silently merged into 'real'. */
+export type PhotoVerdict = 'real' | 'ai' | 'inconclusive' | 'unchecked';
+
+/**
+ * Farmer self-check — namespaced store, separate from the Inspector's
+ * verifications registry. Written by the Farmer Panel, verified by QR.
+ * Read-only for Inspectors (farmer-history lookup only).
+ */
+export interface FarmerCheck {
+  id: string; // fc-<random>, unique per audit, never reused
+  createdAt: string; // ISO timestamp
+  farmerName: string;
+  storageName: string;
+  /** Village + district snapshot (public verification shows this, never phone). */
+  location: string;
+  grainType: GrainType;
+  grainName: string;
+  declaredTonnes: number;
+  estCentral: number;
+  estLow: number;
+  estHigh: number;
+  volumeM3: number;
+  /** null = UNVERIFIED (photo not confirmed genuine) */
+  match: boolean | null;
+  photoVerdict: PhotoVerdict;
+  checkerNote: string | null;
+  photoDataUrl: string | null;
+  heightM: number;
+  diameterM: number;
 }

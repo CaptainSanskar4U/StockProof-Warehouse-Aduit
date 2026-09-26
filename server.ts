@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { store, SAMPLE_GRAIN_IMAGES } from './server/store.js';
 import {
@@ -10,8 +11,9 @@ import {
   SEASON_PROFILES,
   calculatePileVolume
 } from './server/estimation-service.js';
-import { Verification } from './src/types.js';
+import { Verification, FarmerCheck } from './src/types.js';
 import { detectWithHF, resolveImageBytes, HF_PRIMARY_MODEL, HF_XCHECK_MODEL } from './lib/hfDetect.js';
+import { detectWithOpenRouter } from './lib/openrouterDetect.js';
 
 function withSeasonDefaults(context: any) {
   if (!context) return { season: 'rabi', ...context };
@@ -20,7 +22,8 @@ function withSeasonDefaults(context: any) {
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+  const parsedPort = process.env.PORT ? Number(process.env.PORT) : 3000;
+  const PORT = Number.isFinite(parsedPort) ? parsedPort : 3000;
 
   // Allow larger payload for captured photo base64 / URLs
   app.use(express.json({ limit: '20mb' }));
@@ -29,7 +32,7 @@ async function startServer() {
 
   // Health check
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString(), app: 'STOCKPROOF' });
+    res.json({ status: 'ok', time: new Date().toISOString(), app: 'STOCKPROOF', storage: 'file' });
   });
 
   // --- AI image detection ---
@@ -78,7 +81,8 @@ async function startServer() {
     const filename = typeof body.filename === 'string' ? body.filename : undefined;
     if (!dataUrl) return res.status(400).json({ error: 'dataUrl required' });
 
-    // Try one side: local sidecar first, HF cloud on failure.
+    // Try one side: local sidecar first, HF cloud on failure,
+    // OpenRouter model as emergency last resort only.
     const detectOne = async (upstreamBase: string, hfModel: string) => {
       try {
         const { buf, contentType } = await resolveImageBytes(dataUrl);
@@ -94,7 +98,11 @@ async function startServer() {
         try {
           return await detectWithHF(dataUrl, filename, hfModel, process.env.HF_TOKEN);
         } catch {
-          return null;
+          try {
+            return await detectWithOpenRouter(dataUrl, filename, process.env.OPENROUTER_API_KEY);
+          } catch {
+            return null;
+          }
         }
       }
     };
@@ -173,12 +181,12 @@ async function startServer() {
       if (search && typeof search === 'string') {
         const q = search.toLowerCase();
         warehouses = warehouses.filter(w =>
-          w.name.toLowerCase().includes(q) ||
-          w.code.toLowerCase().includes(q) ||
-          w.district.toLowerCase().includes(q) ||
-          w.state.toLowerCase().includes(q) ||
-          w.receiptNumber.toLowerCase().includes(q) ||
-          w.borrowerName.toLowerCase().includes(q)
+          (w.name ?? '').toLowerCase().includes(q) ||
+          (w.code ?? '').toLowerCase().includes(q) ||
+          (w.district ?? '').toLowerCase().includes(q) ||
+          (w.state ?? '').toLowerCase().includes(q) ||
+          (w.receiptNumber ?? '').toLowerCase().includes(q) ||
+          (w.borrowerName ?? '').toLowerCase().includes(q)
         );
       }
 
@@ -216,13 +224,14 @@ async function startServer() {
   app.post('/api/verifications/estimate', (req, res) => {
     try {
       const { geometry, context, declaredTonnes } = req.body;
-      if (!geometry || !context || typeof declaredTonnes !== 'number') {
+      if (!geometry || !context || typeof declaredTonnes !== 'number' || !Number.isFinite(declaredTonnes)) {
         return res.status(400).json({ error: 'Missing geometry, context, or declaredTonnes in request body' });
       }
 
       const normalizedContext = withSeasonDefaults(context);
-      const calculatedVolume = geometry.calculatedVolumeM3 > 0
-        ? geometry.calculatedVolumeM3
+      const providedVolume = Number(geometry.calculatedVolumeM3);
+      const calculatedVolume = Number.isFinite(providedVolume) && providedVolume > 0
+        ? providedVolume
         : calculatePileVolume(geometry.heightMeters, geometry.baseDiameterMeters, geometry.topDiameterMeters, geometry.pileType);
 
       const estimate = computeGrainStockEstimate(
@@ -266,10 +275,14 @@ async function startServer() {
       }
 
       const finalDeclared = typeof declaredTonnes === 'number' ? declaredTonnes : warehouse.currentDeclaredTonnes;
+      if (!Number.isFinite(finalDeclared)) {
+        return res.status(400).json({ error: 'declaredTonnes must be a finite number' });
+      }
       const normalizedContext = withSeasonDefaults(context);
 
-      const calculatedVolume = geometry.calculatedVolumeM3 > 0
-        ? geometry.calculatedVolumeM3
+      const providedCommitVolume = Number(geometry.calculatedVolumeM3);
+      const calculatedVolume = Number.isFinite(providedCommitVolume) && providedCommitVolume > 0
+        ? providedCommitVolume
         : calculatePileVolume(geometry.heightMeters, geometry.baseDiameterMeters, geometry.topDiameterMeters, geometry.pileType);
 
       const estimateResult = computeGrainStockEstimate(
@@ -346,21 +359,101 @@ async function startServer() {
       }
 
       const updates: any = {};
-      if (status) updates.status = status;
+      if (status) {
+        if (!['open', 'resolved', 'escalated'].includes(status)) {
+          return res.status(400).json({ error: 'Invalid review status' });
+        }
+        updates.status = status;
+      }
       if (resolutionType) updates.resolutionType = resolutionType;
-      if (priority) updates.priority = priority;
+      if (priority) {
+        if (!['routine', 'medium', 'urgent'].includes(priority)) {
+          return res.status(400).json({ error: 'Invalid review priority' });
+        }
+        updates.priority = priority;
+      }
       if (assignedTo) updates.assignedTo = assignedTo;
       if (status === 'resolved') {
         updates.resolvedAt = new Date().toISOString();
       }
 
       if (note && typeof note === 'string') {
-        const timestampStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        updates.notes = [...existing.notes, `[${timestampStr}] ${note}`];
+        updates.notes = [...existing.notes, `[${new Date().toISOString()}] ${note}`];
       }
 
       const updated = store.updateReview(id, updates);
       res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- FARMER SELF-CHECKS (namespaced store; read-only for Inspectors) ---
+  // A farmer self-check never enters the verifications registry or the
+  // review queue. Inspectors may only read a named farmer's history.
+
+  app.post('/api/farmer-checks', (req, res) => {
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const required = ['farmerName', 'grainType', 'declaredTonnes', 'estCentral', 'estLow', 'estHigh', 'volumeM3', 'photoVerdict'];
+      for (const k of required) {
+        if (b[k] === undefined || b[k] === null || b[k] === '') {
+          return res.status(400).json({ error: `Missing ${k} in request body` });
+        }
+      }
+      if (!['real', 'ai', 'inconclusive', 'unchecked'].includes(String(b.photoVerdict))) {
+        return res.status(400).json({ error: 'Invalid photoVerdict' });
+      }
+      const numericFields = [b.declaredTonnes, b.estCentral, b.estLow, b.estHigh, b.volumeM3].map(Number);
+      if (!numericFields.every((n) => Number.isFinite(n))) {
+        return res.status(400).json({ error: 'Numeric fields must be finite numbers' });
+      }
+      const check: FarmerCheck = {
+        id: `fc-${crypto.randomUUID().slice(0, 8)}`,
+        createdAt: new Date().toISOString(),
+        farmerName: String(b.farmerName),
+        storageName: typeof b.storageName === 'string' ? b.storageName : '',
+        location: typeof b.location === 'string' ? b.location : '',
+        grainType: b.grainType as FarmerCheck['grainType'],
+        grainName: typeof b.grainName === 'string' && b.grainName ? b.grainName : String(b.grainType),
+        declaredTonnes: Number(b.declaredTonnes),
+        estCentral: Number(b.estCentral),
+        estLow: Number(b.estLow),
+        estHigh: Number(b.estHigh),
+        volumeM3: Number(b.volumeM3 ?? 0),
+        match: typeof b.match === 'boolean' ? b.match : null,
+        photoVerdict: b.photoVerdict as FarmerCheck['photoVerdict'],
+        checkerNote: typeof b.checkerNote === 'string' ? b.checkerNote : null,
+        photoDataUrl: typeof b.photoDataUrl === 'string' ? b.photoDataUrl : null,
+        heightM: Number(b.heightM ?? 0),
+        diameterM: Number(b.diameterM ?? 0),
+      };
+      res.status(201).json(store.addFarmerCheck(check));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/farmer-checks/:id', (req, res) => {
+    try {
+      const found = store.getFarmerCheckById(req.params.id);
+      if (!found) {
+        return res.status(404).json({ error: 'Check not found' });
+      }
+      res.json(found);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/farmer-checks', (req, res) => {
+    try {
+      const { farmer } = req.query;
+      if (typeof farmer !== 'string' || !farmer.trim()) {
+        // No unfiltered list: farmer history is lookup-only, never a feed.
+        return res.status(400).json({ error: 'Query ?farmer=<name> is required' });
+      }
+      res.json(store.getFarmerChecksByFarmer(farmer));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -42,6 +42,12 @@ export function calculatePileVolume(
   topDiameterMeters: number = 0,
   pileType: 'cone' | 'frustum' = 'cone'
 ): number {
+  if (!Number.isFinite(heightMeters) || !Number.isFinite(baseDiameterMeters) || heightMeters <= 0 || baseDiameterMeters <= 0) {
+    throw new Error('Invalid pile geometry: height and base diameter must be positive numbers');
+  }
+  if (topDiameterMeters !== undefined && topDiameterMeters !== 0 && (!Number.isFinite(topDiameterMeters) || topDiameterMeters < 0)) {
+    throw new Error('Invalid pile geometry: top diameter must be a non-negative number');
+  }
   const r1 = baseDiameterMeters / 2;
   if (pileType === 'cone' || topDiameterMeters <= 0) {
     // V = (1/3) * π * r² * h
@@ -59,7 +65,14 @@ export function calculatePileVolume(
  * above which swelling and mold risk dampens further bulk density gain.
  */
 export function getHumidityModifier(grainType: GrainType, humidityPercent: number): number {
-  const safeBase = GRAIN_BULK_DENSITIES[grainType].safeMoisture;
+  const profile = GRAIN_BULK_DENSITIES[grainType];
+  if (!profile) {
+    throw new Error(`Unknown grain type: ${String(grainType)}`);
+  }
+  if (!Number.isFinite(humidityPercent) || humidityPercent < 0 || humidityPercent > 100) {
+    throw new Error('Humidity must be a number between 0 and 100');
+  }
+  const safeBase = profile.safeMoisture;
   const delta = humidityPercent - safeBase;
 
   if (delta >= 0) {
@@ -80,6 +93,9 @@ export function getHumidityModifier(grainType: GrainType, humidityPercent: numbe
  * A single fixed factor would misread the same photo fill across seasons.
  */
 export function getStorageDurationModifier(days: number, season?: Season | string): number {
+  if (!Number.isFinite(days)) {
+    throw new Error('Storage days must be a finite number');
+  }
   const profile = getSeasonProfile(season as Season);
   const cappedDays = Math.min(Math.max(days, 0), 120);
   const raw = (cappedDays / 30) * profile.settleRatePer30d;
@@ -103,11 +119,18 @@ export function computeGrainStockEstimate(
   const season: Season = (context as { season?: Season }).season || 'rabi';
   const seasonProfile = getSeasonProfile(season);
   const grainProfile = GRAIN_BULK_DENSITIES[grainType];
+  if (!grainProfile) {
+    throw new Error(`Unknown grain type: ${String(grainType)}`);
+  }
 
   // 1. Calculate or use verified volume
-  const volumeM3 = geometry.calculatedVolumeM3 > 0 
-    ? geometry.calculatedVolumeM3 
+  const providedVolume = Number(geometry.calculatedVolumeM3);
+  const volumeM3 = Number.isFinite(providedVolume) && providedVolume > 0
+    ? providedVolume
     : calculatePileVolume(geometry.heightMeters, geometry.baseDiameterMeters, geometry.topDiameterMeters, geometry.pileType);
+  if (!Number.isFinite(volumeM3) || volumeM3 <= 0) {
+    throw new Error('Invalid pile geometry: could not determine a positive volume');
+  }
 
   // 2. Base density from agronomic table
   const baseDensity = grainProfile.density;
@@ -174,7 +197,7 @@ export function computeGrainStockEstimate(
 
   if (declaredTonnes > rangeHighTonnes) {
     discrepancyTonnes = Number((declaredTonnes - rangeHighTonnes).toFixed(1));
-    discrepancyPercent = Number(((discrepancyTonnes / declaredTonnes) * 100).toFixed(1));
+    discrepancyPercent = declaredTonnes > 0 ? Number(((discrepancyTonnes / declaredTonnes) * 100).toFixed(1)) : 0;
     
     // Over-declaration detection
     if (discrepancyPercent > 5.0 || discrepancyTonnes > 5.0) {
@@ -184,7 +207,7 @@ export function computeGrainStockEstimate(
     }
   } else if (declaredTonnes < rangeLowTonnes) {
     discrepancyTonnes = Number((rangeLowTonnes - declaredTonnes).toFixed(1));
-    discrepancyPercent = Number(((discrepancyTonnes / declaredTonnes) * 100).toFixed(1));
+    discrepancyPercent = declaredTonnes > 0 ? Number(((discrepancyTonnes / declaredTonnes) * 100).toFixed(1)) : 0;
     status = 'review'; // stock exceeds receipt or potential under-reporting
   } else {
     status = 'consistent';

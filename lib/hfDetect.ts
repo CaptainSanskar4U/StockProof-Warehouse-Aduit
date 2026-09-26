@@ -68,6 +68,9 @@ export async function detectWithHF(
   token: string | undefined,
 ): Promise<DetectFinding> {
   if (!token) throw new Error('HF_TOKEN missing');
+  if (typeof source === 'string' && source.length > 25_000_000) {
+    throw new Error('Image payload too large');
+  }
   const { buf, contentType } = await resolveImageBytes(source);
   let lastErr = '';
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -82,7 +85,13 @@ export async function detectWithHF(
       });
       const text = await r.text();
       if (!r.ok) {
-        // Cold model — HF tells us how long loading takes. Wait, retry.
+        // Cold model — HF tells us how long loading takes. Wait, retry only then.
+        // Auth / bad-request errors (401/400/404) are permanent: fail fast.
+        lastErr = `HF ${r.status}: ${text.slice(0, 120)}`;
+        const retryable = r.status === 503 || r.status === 429;
+        if (!retryable || attempt >= 2) {
+          throw new Error(lastErr);
+        }
         let waitMs = 8000;
         try {
           const errJson = JSON.parse(text) as { estimated_time?: unknown };
@@ -92,12 +101,8 @@ export async function detectWithHF(
         } catch {
           /* plain-text error — fixed wait */
         }
-        lastErr = `HF ${r.status}: ${text.slice(0, 120)}`;
-        if (attempt < 2) {
-          await new Promise((resolve) => setTimeout(resolve, waitMs));
-          continue;
-        }
-        throw new Error(lastErr);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+        continue;
       }
       let data: unknown;
       try {

@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Sign Up Account</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #141414;
+            --panel: #1a1a1a;
+            --field: #212121;
+            --field-hover: #252525;
+            --border: #2e2e2e;
+            --border-strong: #3a3a3a;
+            --text: #f5f5f5;
+            --muted: #96968f;
+            --muted-2: #c9d8d2;
+            --green1: #0d2b23;
+            --green2: #2a7a63;
+            --green3: #0a1c17;
+            --accent: #3fae8f;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            background:
+                radial-gradient(90% 60% at 50% 0%, #1b1b1b 0%, var(--bg) 60%);
+            color: var(--text);
+            font-family: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .card {
+            display: flex;
+            width: 100%;
+            max-width: 940px;
+            min-height: 560px;
+            background: var(--panel);
+            border: 1px solid #262626;
+            border-radius: 22px;
+            overflow: hidden;
+            box-shadow:
+                0 40px 80px -20px rgba(0, 0, 0, .65),
+                0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+        }
+
+        .left {
+            flex: 1 1 45%;
+            background:
+                #0a1c17 url('/logimg.png') center center / cover no-repeat;
+            padding: 44px 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .left::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.28) 48%, rgba(0, 0, 0, 0.08) 75%);
+            pointer-events: none;
+        }
+
+        .left h1 {
+            font-size: 29px;
+            font-weight: 650;
+            letter-spacing: -0.02em;
+            line-height: 1.28;
+            margin: 0 0 12px 0;
+            position: relative;
+        }
+
+        .left p {
+            color: var(--muted-2);
+            font-size: 13.5px;
+            line-height: 1.55;
+            margin: 0 0 26px 0;
+            max-width: 225px;
+            position: relative;
+        }
+
+        .steps {
+            display: flex;
+            gap: 10px;
+            position: relative;
+        }
+
+        .step {
+            flex: 1;
+            border-radius: 13px;
+            padding: 14px 13px;
+            min-height: 72px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform .18s ease, background .18s ease;
+        }
+
+        .step.active {
+            background: #ffffff;
+            color: #111;
+            box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5);
+        }
+
+        .step:not(.active) {
+            background: rgba(255, 255, 255, 0.07);
+            color: #d8ece6;
+            backdrop-filter: blur(2px);
+        }
+
+        .step .num {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .step.active .num {
+            background: #111;
+            color: #fff;
+        }
+
+        .step:not(.active) .num {
+            background: rgba(255, 255, 255, 0.16);
+            color: #fff;
+        }
+
+        .step .label {
+            font-size: 11.5px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            line-height: 1.32;
+            margin-top: 10px;
+        }
+
+        .right {
+            flex: 1 1 55%;
+            padding: 46px 52px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .right h2 {
+            margin: 0 0 5px 0;
+            font-size: 21px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            text-align: center;
+        }
+
+        .right .sub {
+            margin: 0 0 22px 0;
+            text-align: center;
+            color: var(--muted);
+            font-size: 12.5px;
+        }
+
+        .oauth {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .oauth button {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 12px;
+            background: var(--field);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background .15s ease, border-color .15s ease, transform .1s ease;
+        }
+
+        .oauth button svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        .oauth button:hover {
+            background: var(--field-hover);
+            border-color: var(--border-strong);
+        }
+
+        .oauth button:active {
+            transform: scale(0.98);
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 11.5px;
+            margin: 4px 0 18px 0;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .row {
+            display: flex;
+            gap: 14px;
+        }
+
+        .field {
+            flex: 1;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .field label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--muted);
+            margin-bottom: 7px;
+        }
+
+        .field input {
+            background: var(--field);
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            padding: 10.5px 13px;
+            color: var(--text);
+            font-size: 13px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+        }
+
+        .field input::placeholder {
+            color: #6b6b6b;
+        }
+
+        .field input:hover {
+            border-color: var(--border-strong);
+        }
+
+        .field input:focus {
+            border-color: var(--accent);
+            background: #1e1e1e;
+            box-shadow: 0 0 0 3px rgba(63, 174, 143, 0.15);
+        }
+
+        .pw-wrap {
+            position: relative;
+        }
+
+        .pw-wrap input {
+            width: 100%;
+            padding-right: 38px;
+        }
+
+        .pw-wrap .eye {
+            position: absolute;
+            right: 11px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted);
+            cursor: pointer;
+            padding: 2px;
+            display: flex;
+            background: none;
+            border: none;
+            transition: color .15s ease;
+        }
+
+        .pw-wrap .eye:hover {
+            color: var(--text);
+        }
+
+        .pw-wrap .eye svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .hint {
+            font-size: 11px;
+            color: var(--muted);
+            margin: -9px 0 18px 0;
+        }
+
+        .submit {
+            width: 100%;
+            padding: 12.5px;
+            background: #ffffff;
+            color: #111;
+            border: none;
+            border-radius: 10px;
+            font-size: 13.5px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            cursor: pointer;
+            margin-top: 2px;
+            transition: background .15s ease, transform .1s ease, box-shadow .15s ease;
+        }
+
+        .submit:hover {
+            background: #e9e9e9;
+            box-shadow: 0 8px 20px -6px rgba(255, 255, 255, 0.25);
+        }
+
+        .submit:active {
+            transform: scale(0.99);
+        }
+
+        .login-link {
+            text-align: center;
+            font-size: 12.5px;
+            color: var(--muted);
+            margin-top: 16px;
+        }
+
+        .login-link a {
+            color: #fff;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .login-link a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width:760px) {
+            .card {
+                flex-direction: column;
+            }
+
+            .left {
+                min-height: 220px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="left">
+            <div class="steps">
+                <div class="step active">
+                    <span class="num">1</span>
+                    <span class="label">Sign up your account</span>
+                </div>
+                <div class="step">
+                    <span class="num">2</span>
+                    <span class="label">Set up your workspace</span>
+                </div>
+                <div class="step">
+                    <span class="num">3</span>
+                    <span class="label">Set up your profile</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="right">
+            <h2>Sign Up Account</h2>
+            <p class="sub">Enter your personal data to create your account.</p>
+
+            <div class="oauth">
+                <button type="button">
+                    <svg viewBox="0 0 24 24">
+                        <path fill="#4285F4"
+                            d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.63h6.48a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.56-5.17 3.56-8.81z" />
+                        <path fill="#34A853"
+                            d="M12 24c3.24 0 5.96-1.07 7.95-2.92l-3.88-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.27v3.09A12 12 0 0 0 12 24z" />
+                        <path fill="#FBBC05" d="M5.27 14.27a7.2 7.2 0 0 1 0-4.54v-3.1H1.27a12 12 0 0 0 0 10.74z" />
+                        <path fill="#EA4335"
+                            d="M12 4.77c1.77 0 3.35.61 4.6 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.27 6.63l4 3.1c.94-2.85 3.6-4.96 6.73-4.96z" />
+                    </svg>
+                    Google
+                </button>
+                <button type="button">
+                    <svg viewBox="0 0 24 24" fill="#f5f5f5">
+                        <path
+                            d="M12 .3a12 12 0 0 0-3.79 23.4c.6.11.82-.26.82-.58v-2.02c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.02 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.49 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .3z" />
+                    </svg>
+                    Github
+                </button>
+            </div>
+            <div class="divider">Or</div>
+
+            <form onsubmit="event.preventDefault();">
+                <div class="row">
+                    <div class="field">
+                        <label>First Name</label>
+                        <input type="text" placeholder="eg. John">
+                    </div>
+                    <div class="field">
+                        <label>Last Name</label>
+                        <input type="text" placeholder="eg. Francisco">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label>Email</label>
+                    <input type="email" placeholder="eg.johnfrans@gmail.com">
+                </div>
+
+                <div class="field">
+                    <label>Password</label>
+                    <div class="pw-wrap">
+                        <input id="pw" type="password" placeholder="Enter your password">
+                        <button type="button" class="eye" id="eyeBtn" aria-label="Toggle password visibility">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="hint">Must be at least 8 characters.</div>
+
+                <button class="submit" type="submit">Sign Up</button>
+            </form>
+
+            <div class="login-link">Already have an account? <a href="#">Log in</a></div>
+        </div>
+    </div>
+    <script>
+        document.getElementById('eyeBtn').addEventListener('click', function () {
+            const p = document.getElementById('pw');
+            p.type = p.type === 'password' ? 'text' : 'password';
+        });
+    </script>
+</body>
+
+</html>

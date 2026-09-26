@@ -18,9 +18,11 @@ export const SafeImage: React.FC<SafeImageProps> = ({
   const [failed, setFailed] = useState(false);
   return (
     <img
-      src={failed ? fallbackSrc : src}
+      src={src && !failed ? src : fallbackSrc}
       alt={alt}
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (!failed) setFailed(true);
+      }}
       {...rest}
     />
   );

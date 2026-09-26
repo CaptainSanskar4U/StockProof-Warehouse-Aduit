@@ -1,11 +1,13 @@
-import { 
-  Warehouse, 
-  Verification, 
-  ReviewItem, 
-  PortfolioSummary, 
-  EstimationResult, 
-  GeometryInputs, 
-  ContextInputs 
+import {
+  Warehouse,
+  Verification,
+  ReviewItem,
+  PortfolioSummary,
+  EstimationResult,
+  GeometryInputs,
+  ContextInputs,
+  FarmerCheck,
+  PhotoVerdict
 } from '../types.js';
 
 export const API_BASE = '/api';
@@ -118,4 +120,51 @@ export async function fetchLatestVerifications(): Promise<Record<string, Verific
 export async function resetDemoData(): Promise<void> {
   const res = await fetch(`${API_BASE}/reset-demo`, { method: 'POST' });
   if (!res.ok) throw new Error(`Reset failed (${res.status})`);
+}
+
+// ---- Farmer self-checks (namespaced; QR-verified) ----
+
+export interface FarmerCheckPayload {
+  farmerName: string;
+  storageName: string;
+  location: string;
+  grainType: FarmerCheck['grainType'];
+  grainName: string;
+  declaredTonnes: number;
+  estCentral: number;
+  estLow: number;
+  estHigh: number;
+  volumeM3: number;
+  match: boolean | null;
+  photoVerdict: PhotoVerdict;
+  checkerNote: string | null;
+  photoDataUrl: string | null;
+  heightM: number;
+  diameterM: number;
+}
+
+export async function submitFarmerCheck(payload: FarmerCheckPayload): Promise<FarmerCheck> {
+  const res = await fetch(`${API_BASE}/farmer-checks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Check submission failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchFarmerCheckById(id: string): Promise<FarmerCheck> {
+  const res = await fetch(`${API_BASE}/farmer-checks/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(res.status === 404 ? 'Check not found' : `Lookup failed (${res.status})`);
+  return res.json();
+}
+
+/** Read-only farmer history for Inspector lookup context. Never a feed. */
+export async function fetchFarmerChecksByFarmer(name: string): Promise<FarmerCheck[]> {
+  const res = await fetch(`${API_BASE}/farmer-checks?farmer=${encodeURIComponent(name)}`);
+  if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
+  return res.json();
 }

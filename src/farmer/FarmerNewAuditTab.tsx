@@ -1,39 +1,41 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Warehouse,
-  Verification,
   EstimationResult,
   GeometryInputs,
   ContextInputs,
   GrainType,
   Season,
   CompactionLevel,
+  PhotoVerdict,
 } from '../types.js';
 import { SEASON_PROFILES, SEASON_ORDER } from '../seasonProfiles.js';
 import { GRAIN_BULK_DENSITIES, SAMPLE_GRAIN_IMAGES } from '../constants.js';
-import { SafeImage } from './SafeImage.js';
-import { previewEstimate, submitVerification } from '../services/api.js';
+import { SafeImage } from '../components/SafeImage.js';
+import { previewEstimate, submitFarmerCheck } from '../services/api.js';
+import {
+  MATCH_TOLERANCE,
+  downscaleDataUrl,
+  loadProfile,
+  loadRecords,
+  makeCode,
+  saveRecord,
+} from './farmerStore.js';
 import {
   bankableTonnes,
-  reposeDeg,
   reposeVerdict,
   reverseProof,
 } from '../proofMath.js';
-import { useSharedAudit, type PhotoState } from './proof/SharedAuditContext.js';
+import { useSharedAudit, type PhotoState } from '../components/proof/SharedAuditContext.js';
 import {
-  BankableBlock,
-  DetectReportCard,
   PhotoGateBanner,
-  PhysicsCheckBlock,
-  ReverseProofBlock,
-} from './proof/ProofBlocks.js';
+} from '../components/proof/ProofBlocks.js';
 import {
+  BookmarkPlus,
   Camera,
   Upload,
   X,
-  Check,
   ArrowRight,
-  ArrowLeft,
   RotateCcw,
   Printer,
   Download,
@@ -42,21 +44,19 @@ import {
   Receipt,
 } from 'lucide-react';
 
-interface NewAuditTabProps {
+interface FarmerNewAuditTabProps {
   warehouses: Warehouse[];
-  currentAuditor: { id: string; name: string; role: string };
-  onVerificationSaved: (v: Verification) => void;
+  onViewRecords: () => void;
 }
 
-type Phase = 'idle' | 'preview' | 'measure' | 'analyzing' | 'result';
+type Phase = 'photo' | 'adjust' | 'working' | 'result';
 
-// Quiet progress — kept in code as five human moments, shown as a hairline.
-const STAGES = ['Photograph', 'Confirm', 'Describe', 'Reading', 'Finding'];
+// Quiet progress — photograph, adjust, checking, finding.
+const STAGES = ['Photograph', 'Adjust', 'Checking', 'Finding'];
 const STAGE_HINT = [
-  'Begin with the pile itself',
-  'Make sure it is the right frame',
-  'Tell us what the photo cannot',
-  'Give it a moment',
+  'Add one honest photograph',
+  'Describe the pile, then check',
+  'Checking your image…',
   'Here is what the pile holds',
 ];
 
@@ -106,6 +106,46 @@ const demoFallback = (volumeM3: number, declaredTonnes: number): EstimationResul
 };
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Real-photo check runs in the background while the farmer waits on the
+// progress screen. Never blocks: 'ai' and 'inconclusive' continue to a
+// limited UNVERIFIED result; 'unchecked' (timeout/offline) proceeds with an
+// honest note so the demo survives bad connectivity.
+const AI_CHECK_TIMEOUT_MS = 10000;
+
+async function detectPhotoAi(p: PhotoState, timeoutMs: number): Promise<PhotoVerdict> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch('/api/ai-detect', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dataUrl: p.dataUrl, filename: p.name }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return 'unchecked';
+    const data = (await res.json()) as {
+      primary?: { label?: unknown; probability_ai?: unknown };
+      cross?: { label?: unknown; probability_ai?: unknown };
+    };
+    const findings = [data?.primary, data?.cross].filter(
+      (f): f is { label?: unknown; probability_ai?: unknown } =>
+        !!f && typeof f.label === 'string',
+    );
+    if (findings.some((f) => f.label === 'ai')) return 'ai';
+    if (findings.length === 0) return 'unchecked';
+    // A high-but-below-threshold AI score is disagreement, not proof of real.
+    const top = Math.max(
+      ...findings.map((f) => (typeof f.probability_ai === 'number' ? f.probability_ai : 0)),
+    );
+    if (top >= 0.4) return 'inconclusive';
+    return 'real';
+  } catch {
+    return 'unchecked';
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function downscaleImage(
   dataUrl: string,
@@ -175,10 +215,9 @@ function readFileAsDataURL(file: File): Promise<string> {
   });
 }
 
-export const NewAuditTab: React.FC<NewAuditTabProps> = ({
+export const FarmerNewAuditTab: React.FC<FarmerNewAuditTabProps> = ({
   warehouses,
-  currentAuditor,
-  onVerificationSaved,
+  onViewRecords,
 }) => {
   const [warehouseId, setWarehouseId] = useState<string>('');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -187,7 +226,6 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
   const {
     photo, setPhoto,
     photoQuality, clearPhoto, refreshPhotoGate,
-    detectPrimary, detectCross, detectPending, runDetection,
     heightMeters, setHeightMeters,
     baseDiameterMeters, setBaseDiameterMeters,
     grainType, setGrainType,
@@ -197,7 +235,6 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     storageDays, setStorageDays,
     declaredText, setDeclaredText,
     declaredTouched, setDeclaredTouched,
-    priceText, setPriceText,
   } = useSharedAudit();
   const liveVolume = coneVolume(heightMeters, baseDiameterMeters);
   const [receiptPhoto, setReceiptPhoto] = useState<PhotoState | null>(null);
@@ -210,8 +247,32 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
   const [activeStep, setActiveStep] = useState<number>(-1);
   const [estimationResult, setEstimationResult] = useState<EstimationResult | null>(null);
   const [usedFallback, setUsedFallback] = useState<boolean>(false);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [savedVerification, setSavedVerification] = useState<Verification | null>(null);
+  // Farmer Records save — the single save action on this screen.
+  const [isSavingFarmer, setIsSavingFarmer] = useState<boolean>(false);
+  const [savedFarmerCode, setSavedFarmerCode] = useState<string | null>(null);
+  const [savedVerifyId, setSavedVerifyId] = useState<string | null>(null);
+  const [savedQr, setSavedQr] = useState<string | null>(null);
+
+  // QR for the saved server record — generated once the id exists.
+  useEffect(() => {
+    let alive = true;
+    setSavedQr(null);
+    if (!savedVerifyId) return;
+    (async () => {
+      const { qrDataUrl, verifyUrl } = await import('./qr.js');
+      const url = await qrDataUrl(verifyUrl(savedVerifyId));
+      if (alive) setSavedQr(url);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [savedVerifyId]);
+  const [farmerSaveMsg, setFarmerSaveMsg] = useState<string | null>(null);
+  // Pipeline progress: quality → real-photo check → estimate.
+  const [workStage, setWorkStage] = useState<'quality' | 'aicheck' | 'estimate'>('quality');
+  const [checkerNote, setCheckerNote] = useState<string | null>(null);
+  // Pipeline AI verdict, used by exports (context detection no longer runs here).
+  const [aiVerdict, setAiVerdict] = useState<PhotoVerdict | null>(null);
   const [loadingSample, setLoadingSample] = useState<boolean>(false);
 
   // Camera capture state
@@ -245,13 +306,17 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       clearPhoto();
       setReceiptPhoto(null);
       setEstimationResult(null);
-      setSavedVerification(null);
+      setSavedFarmerCode(null);
+      setFarmerSaveMsg(null);
+      setCheckerNote(null);
+      setAiVerdict(null);
+      setWorkStage('quality');
       setRunDeclared(0);
       setCompletedSteps(0);
       setActiveStep(-1);
       setErrorMsg(null);
       setShowChooser(false);
-      setPhase('idle');
+      setPhase('photo');
     }
   }, [warehouses, warehouseId]);
 
@@ -274,15 +339,17 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     setCameraOpen(false);
     setCameraError(null);
     clearPhoto();
-    setPhase('idle');
+    setPhase('photo');
+    setWorkStage('quality');
+    setCheckerNote(null);
+    setAiVerdict(null);
     setShowChooser(false);
     setErrorMsg(null);
     setCompletedSteps(0);
     setActiveStep(-1);
     setEstimationResult(null);
     setUsedFallback(false);
-    setIsSaving(false);
-    setSavedVerification(null);
+    setIsSavingFarmer(false);
     setReceiptPhoto(null);
     setDeclaredTouched(false);
     setRunDeclared(0);
@@ -321,9 +388,9 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       const processed = await processImageFile(file);
       const next = { ...processed, name: file.name, source: 'upload' as const };
       setPhoto(next);
-      setPhase('preview');
       setShowChooser(false);
-      void refreshPhotoGate(next); void runDetection(next);
+      setErrorMsg(null);
+      setPhase('adjust');
     } catch (err: any) {
       setErrorMsg(err?.message || 'Could not process that image. Try a different file.');
     }
@@ -362,7 +429,8 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       const processed = await processImageFile(file);
       const next = { ...processed, name: 'sample-wheat-pile.jpg', source: 'upload' as const };
       setPhoto(next);
-      void refreshPhotoGate(next); void runDetection(next);
+      setErrorMsg(null);
+      setPhase('adjust');
     } catch {
       const fallback = {
         dataUrl: SAMPLE_GRAIN_IMAGES.wheat_pile,
@@ -374,10 +442,10 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
         meanLuma: 128,
       };
       setPhoto(fallback);
-      void refreshPhotoGate(fallback); void runDetection(fallback);
+      setErrorMsg(null);
+      setPhase('adjust');
     } finally {
       setLoadingSample(false);
-      setPhase('preview');
       setShowChooser(false);
     }
   };
@@ -439,17 +507,31 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       setPhoto(next);
       stopCamera();
       setCameraOpen(false);
-      setPhase('preview');
       setShowChooser(false);
       setErrorMsg(null);
-      void refreshPhotoGate(next); void runDetection(next);
+      setPhase('adjust');
     } catch {
       setCameraError('Could not capture a frame on this device. Try “Upload from Device”.');
     }
   };
 
-  const runAnalysis = async () => {
-    if (!warehouse || !photo || phase === 'analyzing') return;
+  // The single Check action on the adjust screen.
+  const handleCheckClick = () => {
+    if (!photo) return;
+    const declared = parseFloat(declaredText);
+    if (!Number.isFinite(declared) || declared <= 0) {
+      setErrorMsg('Enter the declared stock in tonnes (a number above 0) — read it off the paper receipt.');
+      return;
+    }
+    setErrorMsg(null);
+    void startPipeline(photo);
+  };
+
+  // One pipeline, triggered by the Check button: quality → real-photo
+  // check → estimate. The farmer waits on a single progress screen until
+  // the result appears automatically.
+  const startPipeline = async (next: PhotoState) => {
+    if (!warehouse) return;
     const token = ++runTokenRef.current;
     const isStale = () => token !== runTokenRef.current;
 
@@ -457,14 +539,37 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     const declared = parseFloat(declaredText);
     if (!Number.isFinite(declared) || declared <= 0) {
       setErrorMsg('Enter the declared stock in tonnes (a number above 0) — read it off the paper receipt.');
+      setPhase('adjust');
       return;
     }
     setUsedFallback(false);
     setRunDeclared(declared);
-    setPhase('analyzing');
+    setEstimationResult(null);
+    setSavedFarmerCode(null);
+    setFarmerSaveMsg(null);
+    setCheckerNote(null);
+    setAiVerdict(null);
     setCompletedSteps(0);
-    setActiveStep(0);
+    setActiveStep(-1);
+    setPhase('working');
+    setWorkStage('quality');
 
+    // 1. Photo quality — fast, local, advisory only (never blocks).
+    await refreshPhotoGate(next);
+    if (isStale()) return;
+    setWorkStage('aicheck');
+
+    // 2. Real-photo check — awaited, never blocks. 'ai' and 'inconclusive'
+    // continue to a limited UNVERIFIED result; 'unchecked' stays honest.
+    const verdict = await detectPhotoAi(next, AI_CHECK_TIMEOUT_MS);
+    if (isStale()) return;
+    setAiVerdict(verdict);
+    if (verdict === 'unchecked') {
+      setCheckerNote('Photo checker unreachable — this reading is unchecked.');
+    }
+    setWorkStage('estimate');
+
+    // 3. Estimate — staged animation with the real engine underneath.
     const geometry: GeometryInputs = {
       pileType: 'cone',
       heightMeters,
@@ -508,41 +613,78 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     setPhase('result');
   };
 
-  const handleSaveAudit = async () => {
-    if (!warehouse || !photo || !estimationResult || isSaving) return;
-    setIsSaving(true);
-    setErrorMsg(null);
+  const handleSaveToRecords = async () => {
+    if (!warehouse || !photo || !estimationResult || isSavingFarmer) return;
+    setIsSavingFarmer(true);
+    setFarmerSaveMsg(null);
     try {
-      const saved = await submitVerification({
-        warehouseId: warehouse.id,
-        photoUrl: photo.dataUrl,
-        mediaType: 'photo',
-        referenceScale: 'none',
-        geometry: {
-          pileType: 'cone',
-          heightMeters,
-          baseDiameterMeters,
-          calculatedVolumeM3: liveVolume,
-          measurementMethod: 'visual_estimate',
-        },
-        context: {
+      const profile = loadProfile();
+      const central = estimationResult.centralEstimateTonnes;
+      const verdict: PhotoVerdict = aiVerdict ?? 'unchecked';
+      const unverified = verdict === 'ai' || verdict === 'inconclusive';
+      const match = unverified
+        ? null
+        : runDeclared > 0 && Math.abs(central - runDeclared) / runDeclared <= MATCH_TOLERANCE;
+      const code = makeCode(loadRecords());
+      let recordPhoto: string | null = photo.dataUrl;
+      try {
+        recordPhoto = await downscaleDataUrl(photo.dataUrl, 1024);
+      } catch {
+        /* keep the original frame */
+      }
+      // Server record first — its id is what the QR verifies. Local save
+      // always happens, even if the server is unreachable (QR pending).
+      let verificationId: string | null = null;
+      try {
+        const saved = await submitFarmerCheck({
+          farmerName: profile.name || 'Name not set',
+          storageName: profile.storageName || 'Storage not set',
+          location: [profile.village, profile.district].filter(Boolean).join(', '),
           grainType,
-          season,
-          humidityPercent,
-          compaction,
-          storageDays,
-        },
-        declaredTonnes: runDeclared,
-        receiptPhotoUrl: receiptPhoto?.dataUrl,
-        declaredSource: declaredTouched ? 'manual' : 'registry',
-        runBy: currentAuditor,
+          grainName: GRAIN_BULK_DENSITIES[grainType]?.name || grainType,
+          declaredTonnes: Number(runDeclared.toFixed(1)),
+          estCentral: central,
+          estLow: estimationResult.rangeLowTonnes,
+          estHigh: estimationResult.rangeHighTonnes,
+          volumeM3: estimationResult.volumeM3,
+          match,
+          photoVerdict: verdict,
+          checkerNote,
+          photoDataUrl: recordPhoto,
+          heightM: heightMeters,
+          diameterM: baseDiameterMeters,
+        });
+        verificationId = saved.id;
+      } catch {
+        setFarmerSaveMsg('Saved on this device, but the verification code is pending — reconnect and save again to get your QR.');
+      }
+      saveRecord({
+        code,
+        createdAt: new Date().toISOString(),
+        declaredTonnes: Number(runDeclared.toFixed(1)),
+        grainType,
+        grainName: GRAIN_BULK_DENSITIES[grainType]?.name || grainType,
+        estCentral: central,
+        estLow: estimationResult.rangeLowTonnes,
+        estHigh: estimationResult.rangeHighTonnes,
+        volumeM3: estimationResult.volumeM3,
+        match,
+        photoVerdict: verdict,
+        checkerNote,
+        verificationId,
+        photoDataUrl: recordPhoto,
+        heightM: heightMeters,
+        diameterM: baseDiameterMeters,
+        farmerName: profile.name || 'Name not set',
+        storageName: profile.storageName || 'Storage not set',
+        source: 'engine',
       });
-      setSavedVerification(saved);
-      onVerificationSaved(saved);
+      setSavedFarmerCode(code);
+      setSavedVerifyId(verificationId);
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Could not save this audit to the registry. Try again.');
+      setFarmerSaveMsg(err?.message || 'Could not save to your records. Try again.');
     } finally {
-      setIsSaving(false);
+      setIsSavingFarmer(false);
     }
   };
 
@@ -575,8 +717,8 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       ['Declared source', declaredTouched ? 'manual entry' : 'registry value'],
       ['Receipt photo attached', receiptPhoto ? 'yes' : 'no'],
       ['Photo quality', photoQuality ? (photoQuality.ok ? 'FULL PILE VISIBLE' : `NOT SUITABLE: ${photoQuality.reasons.join('; ')}`) : 'not checked'],
-      ['AI-image primary', detectPrimary ? `${detectPrimary.label} (AI ${detectPrimary.probability_ai.toFixed(3)} / real ${detectPrimary.probability_real.toFixed(3)} / conf ${detectPrimary.confidence.toFixed(3)})` : (detectPending ? 'reading…' : 'detector unavailable')],
-      ['AI-image cross-check', detectCross ? `${detectCross.label} (AI ${detectCross.probability_ai.toFixed(3)} / real ${detectCross.probability_real.toFixed(3)} / conf ${detectCross.confidence.toFixed(3)})` : (detectPending ? 'reading…' : 'detector unavailable')],
+      ['AI-image primary', aiVerdict === 'real' ? 'passed — looks real' : aiVerdict === 'ai' ? 'FLAGGED as AI-generated' : aiVerdict === 'inconclusive' ? 'inconclusive — detectors disagree' : 'checker unavailable at audit time'],
+      ['AI-image cross-check', aiVerdict === 'real' ? 'passed — looks real' : aiVerdict === 'ai' ? 'FLAGGED as AI-generated' : aiVerdict === 'inconclusive' ? 'inconclusive — detectors disagree' : 'checker unavailable at audit time'],
       ['Estimated (T)', estimationResult.centralEstimateTonnes.toFixed(1)],
       ['Range Low (T)', estimationResult.rangeLowTonnes.toFixed(1)],
       ['Range High (T)', estimationResult.rangeHighTonnes.toFixed(1)],
@@ -590,7 +732,7 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       ['Status', estimationResult.status],
       ['Volume (m3)', estimationResult.volumeM3.toFixed(1)],
       ['Effective density (t/m3)', estimationResult.effectiveDensity.toFixed(3)],
-      ['Auditor', `${currentAuditor.name} (${currentAuditor.role})`],
+      ['Checked by', loadProfile().name || 'Farmer'],
     ];
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -649,14 +791,14 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 <tr><td class="label">Reverse proof</td><td>${runDeclared.toFixed(1)}T needs ${revP.requiredVolumeM3.toFixed(0)} m³ / ${revP.requiredHeightM.toFixed(1)}m height vs measured ${heightMeters.toFixed(1)}m — ${revP.supported ? 'SUPPORTED' : 'NOT SUPPORTED'}</td></tr>
 <tr><td class="label">Physics</td><td>${geoP.deg.toFixed(1)}° vs ${geoP.min}-${geoP.max}° — ${geoP.violation ? 'PHYSICS VIOLATION' : 'POSSIBLE'}</td></tr>
 <tr><td class="label">Bankable (internal)</td><td>${bankP.bankableTonnes.toFixed(1)} T (haircut ${bankP.haircutPct.toFixed(1)}%)</td></tr>
-<tr><td class="label">AI-image primary</td><td>${detectPrimary ? `${detectPrimary.label} (AI ${detectPrimary.probability_ai.toFixed(3)})` : 'detector unavailable'}</td></tr>
-<tr><td class="label">AI-image cross-check</td><td>${detectCross ? `${detectCross.label} (AI ${detectCross.probability_ai.toFixed(3)})` : 'detector unavailable'}</td></tr>
+<tr><td class="label">AI-image primary</td><td>${aiVerdict === 'real' ? 'passed — looks real' : aiVerdict === 'ai' ? 'FLAGGED as AI-generated' : aiVerdict === 'inconclusive' ? 'inconclusive — detectors disagree' : 'checker unavailable at audit time'}</td></tr>
+<tr><td class="label">AI-image cross-check</td><td>${aiVerdict === 'real' ? 'passed — looks real' : aiVerdict === 'ai' ? 'FLAGGED as AI-generated' : aiVerdict === 'inconclusive' ? 'inconclusive — detectors disagree' : 'checker unavailable at audit time'}</td></tr>
 </table>
 <div class="label mono">Visual Evidence</div>
 <img src="${photo.dataUrl}" alt="Audit evidence" />
 <p><strong>Audit reasoning:</strong> ${estimationResult.explanatoryReason}</p>
 <p><strong>Recommendation:</strong> ${estimationResult.auditRecommendation}</p>
-<div class="footer mono">Run by ${currentAuditor.name} · ${new Date().toLocaleString()} · The system supports the auditor — it does not replace the physical audit.</div>
+<div class="footer mono">Checked by ${loadProfile().name || 'Farmer'} · ${new Date().toLocaleString()} · The system supports the farmer — it does not replace a physical check.</div>
 </body></html>`);
     popup.document.close();
     popup.focus();
@@ -665,17 +807,9 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 
   const grainLabel = () => GRAIN_BULK_DENSITIES[grainType]?.name || grainType;
 
-  // Quiet position in the walk: photograph(0) → confirm(1) → describe(2) → reading(3) → finding(4).
+  // Quiet position in the walk: photograph(0) → adjust(1) → checking(2) → finding(3).
   const stageIndex =
-    phase === 'preview'
-      ? 1
-      : phase === 'measure'
-      ? 2
-      : phase === 'analyzing'
-      ? 3
-      : phase === 'result'
-      ? 4
-      : 0;
+    phase === 'adjust' ? 1 : phase === 'working' ? 2 : phase === 'result' ? 3 : 0;
 
   if (warehouses.length === 0) {
     return (
@@ -716,22 +850,22 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pt-1">
         <div className="max-w-xl">
           <h1 className="serif-reading text-[#2A2118] text-3xl sm:text-4xl">
-            {phase === 'result' ? 'What the pile holds' : phase === 'analyzing' ? 'Reading your photo' : phase === 'measure' ? 'Tell us what the photo cannot' : photo ? 'Is this the right frame?' : 'Begin with the pile itself'}
+            {phase === 'result' ? 'What the pile holds' : phase === 'working' ? 'Checking your image…' : phase === 'adjust' ? 'Describe your pile' : 'Photograph the pile'}
           </h1>
           <p className="text-[15px] leading-relaxed text-[#6B5F4F] mt-2">
             {phase === 'result'
               ? `A careful reading of ${warehouse?.name || 'this store'}, held against its paper receipt.`
-              : phase === 'measure'
+              : phase === 'working'
+              ? 'Your photo is being checked and read — stay on this screen a moment.'
+              : phase === 'adjust'
               ? 'Your eye completes what the camera cannot — shape, season, and the way grain settles.'
-              : photo
-              ? 'Look closely. If the whole pile breathes inside the frame, we can begin.'
-              : `For ${warehouse?.name || 'this warehouse'} — one honest photograph is enough to start.`}
+              : `Add one honest photograph — the check begins from there.`}
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-[#6B5F4F] shrink-0">
           <span className="eyebrow-quiet">Store</span>
           <select
-            value={warehouse?.id ?? ''}
+            value={warehouse?.id}
             onChange={(e) => setWarehouseId(e.target.value)}
             className="bg-[#FFFEFA] border border-[rgba(42,33,24,0.16)] rounded-[10px] px-3 py-2 text-xs text-[#2A2118] focus:outline-none focus:border-[#A87F2A] max-w-60 cursor-pointer"
           >
@@ -751,8 +885,8 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
         </div>
       )}
 
-      {/* --- PHASE: IDLE — big upload card --- */}
-      {phase === 'idle' && (
+      {/* --- PHASE: PHOTO — big upload card --- */}
+      {phase === 'photo' && !photo && (
         <div className="washi-sheet px-6 py-10 sm:px-12 sm:py-14 text-center washi-enter">
           <p className="eyebrow-quiet">One photograph · {warehouse?.code} · {declared.toFixed(0)} T on paper</p>
           <h2 className="serif-reading text-3xl sm:text-4xl text-[#2A2118] mt-3 max-w-md mx-auto">
@@ -777,6 +911,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             </span>
             <span className="block text-[15px] text-[#2A2118]">Drop your photo here, or <span className="underline underline-offset-4 decoration-[#A87F2A]/50">browse</span></span>
             <span className="block text-xs text-[#8A7D68] mt-1.5 font-mono">JPG · PNG · WebP, up to 15 MB</span>
+            <span className="block text-[11px] text-[#8A7D68]/80 mt-1.5">Photos may be checked by external AI services to confirm they are real.</span>
           </button>
 
           <input
@@ -817,59 +952,45 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
           </div>
 
           <p className="text-xs text-[#8A7D68] mt-7">
-            Nothing is measured until you ask. Your photo stays with you.
+            Add your pile photo — you'll describe the pile and check it on the next step.
           </p>
         </div>
       )}
 
-      {/* --- PREVIEW — is this the right frame? --- */}
-      {phase === 'preview' && photo && (
-        <div className="washi-enter space-y-4">
-          <figure className="washi-sheet overflow-hidden">
-            <div className="bg-[#221A12] p-2 sm:p-3">
-              <SafeImage src={photo.dataUrl} alt="The grain pile, as photographed" className="w-full max-h-[440px] object-contain rounded-[8px]" />
-            </div>
-            <figcaption className="flex flex-wrap items-baseline justify-between gap-2 px-5 sm:px-6 py-4">
-              <span className="serif-reading text-lg text-[#2A2118] italic">“{photo.source === 'camera' ? 'Fresh from the field' : photo.name}”</span>
-              <span className="font-mono text-[11px] text-[#8A7D68]">{photo.width} × {photo.height} · {photo.sizeKB} KB</span>
-            </figcaption>
-          </figure>
-          <PhotoGateBanner quality={photoQuality} />
-          <DetectReportCard
-            primary={detectPrimary}
-            cross={detectCross}
-            pending={detectPending}
-            onRetry={() => photo && void runDetection(photo)}
-          />
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-5">
-            <button
-              type="button"
-              onClick={resetWorkflow}
-              className="touch-target px-4 py-2.5 text-sm text-[#6B5F4F] hover:text-[#9C4A42] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-              <span>Choose another</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setErrorMsg(null);
-                setPhase('measure');
-              }}
-              className="touch-target px-7 py-3 bg-[#2A2118] hover:bg-[#3A2E20] text-[#F6F1E7] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_8px_24px_-8px_rgba(42,33,24,0.5)]"
-            >
-              <span>Yes, describe this pile</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+      {/* Photo on file — swap it or remove it */}
+      {phase === 'photo' && photo && (
+        <div className="washi-sheet p-3 flex items-center gap-3 washi-enter">
+          <SafeImage src={photo.dataUrl} alt="Your pile" className="w-16 h-16 rounded-[10px] object-cover border border-[rgba(42,33,24,0.14)] shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-[#2A2118] truncate">{photo.source === 'camera' ? 'Fresh from the field' : photo.name}</p>
+            <p className="font-mono text-[11px] text-[#4A6B4F]">photo ready — describe the pile below, or swap it</p>
           </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="font-mono text-[11px] text-[#2A2118] underline underline-offset-2 shrink-0 cursor-pointer"
+          >
+            Replace
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearPhoto();
+              setErrorMsg(null);
+            }}
+            className="font-mono text-[11px] text-[#8A7D68] hover:text-[#9C4A42] underline underline-offset-2 shrink-0 cursor-pointer"
+          >
+            Remove
+          </button>
         </div>
       )}
 
-      {/* --- PHASE: MEASURE (02) + QUALIFY (03) + UNDERSTAND (04) --- */}
-      {phase === 'measure' && photo && warehouse && (
+      {/* --- PHASE: ADJUST — shape, grain, season, paper, then Check --- */}
+      {phase === 'adjust' && warehouse && (
         <div className="washi-enter">
         <div className="washi-sheet overflow-hidden">
           {/* Small keepsake of the photo — you never lose sight of what you saw */}
+          {photo && (
           <div className="flex items-center gap-4 px-5 sm:px-7 pt-5 sm:pt-6">
             <SafeImage src={photo.dataUrl} alt="Your pile" className="w-16 h-16 rounded-[10px] object-cover border border-[rgba(42,33,24,0.14)] shrink-0" />
             <div className="min-w-0">
@@ -889,7 +1010,8 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
               {liveVolume} m³<br />alive
             </p>
           </div>
-          {/* Camera-section gate: same verdict as preview, right where you measure */}
+          )}
+          {/* Camera-section gate: quality readout, right where you describe */}
           <div className="px-5 sm:px-7 pt-4 space-y-3">
             <PhotoGateBanner quality={photoQuality} />
           </div>
@@ -1115,46 +1237,87 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
           </div>
         </div>
 
-          {/* Step gently forward */}
-          <div className="pt-5 flex items-center justify-between gap-3">
+          {/* Check — the single step forward */}
+          <div className="px-5 sm:px-7 pb-6 sm:pb-7 pt-5 flex items-center justify-between gap-3">
             <button
               type="button"
-              onClick={() => setPhase('preview')}
+              onClick={() => setPhase('photo')}
               className="touch-target px-4 py-2.5 text-sm text-[#6B5F4F] hover:text-[#2A2118] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to the photo</span>
+              <span>← Back to photo</span>
             </button>
             <button
               type="button"
-              onClick={runAnalysis}
-              className="touch-target px-7 py-3 bg-[#2A2118] hover:bg-[#3A2E20] text-[#F6F1E7] text-sm rounded-full inline-flex items-center gap-2 transition-all cursor-pointer shadow-[0_8px_24px_-8px_rgba(42,33,24,0.5)]"
+              onClick={handleCheckClick}
+              className="touch-target px-7 py-3.5 bg-[#2A2118] hover:bg-[#3A2E20] text-[#F6F1E7] text-sm font-bold rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_8px_24px_-8px_rgba(42,33,24,0.5)]"
             >
-              <span>Read the stock</span>
+              <span>Check My Stock</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* --- READING — give it a moment --- */}
-      {phase === 'analyzing' && photo && (
+      {/* --- WORKING — one progress screen until the result appears --- */}
+      {phase === 'working' && photo && (
         <div className="washi-sheet overflow-hidden washi-enter">
           <div className="grid grid-cols-1 md:grid-cols-2">
             <div className="relative bg-[#221A12] p-2 sm:p-3 min-h-64">
-              <SafeImage src={photo.dataUrl} alt="Your pile, being read" className="w-full h-full min-h-64 max-h-[380px] object-cover rounded-[8px] opacity-90 washi-veil" />
+              <SafeImage src={photo.dataUrl} alt="Your pile, being checked" className="w-full h-full min-h-64 max-h-[380px] object-cover rounded-[8px] opacity-90 washi-veil" />
               <div className="absolute inset-2 sm:inset-3 rounded-[8px] bg-[#F6F1E7]/10 backdrop-blur-[1px]" />
             </div>
             <div className="px-6 sm:px-8 py-7 sm:py-9 flex flex-col justify-center">
               <p className="eyebrow-quiet">{warehouse?.code} · {warehouse?.receiptNumber}</p>
-              <h2 className="serif-reading text-2xl sm:text-[28px] text-[#2A2118] mt-2 min-h-[2.5em]">
-                {activeStep >= 0 && ANALYSIS_STEPS[activeStep] ? `${ANALYSIS_STEPS[activeStep]}…` : 'Reading your photo…'}
+              <h2 className="serif-reading text-2xl sm:text-[28px] text-[#2A2118] mt-2">
+                Checking your image…
               </h2>
               <div className="mt-5 h-[2px] bg-[rgba(42,33,24,0.1)] rounded-full overflow-hidden">
-                <div className="h-full bg-[#2A2118] rounded-full transition-all duration-500" style={{ width: `${(completedSteps / ANALYSIS_STEPS.length) * 100}%` }} />
+                <div
+                  className="h-full bg-[#2A2118] rounded-full transition-all duration-500"
+                  style={{
+                    width: workStage === 'quality' ? '12%' : workStage === 'aicheck' ? '32%' : `${32 + (completedSteps / ANALYSIS_STEPS.length) * 68}%`,
+                  }}
+                />
               </div>
-              <div className="mt-4 space-y-1.5">
-                {ANALYSIS_STEPS.map((label, i) => {
+              <div className="mt-4 space-y-2.5">
+                {/* 1. Photo quality — fast, local, advisory */}
+                <p className="text-[13px] text-[#2A2118]">
+                  <span className="inline-block w-5 font-mono text-[11px]">✓</span>
+                  Photo received
+                  {photoQuality && !photoQuality.ok && (
+                    <span className="block text-xs text-[#8A7D68] mt-0.5 ml-5">
+                      {photoQuality.reasons.join(' · ')}
+                    </span>
+                  )}
+                </p>
+                {/* 2. Real-photo check */}
+                {workStage === 'quality' ? (
+                  <p className="text-[13px] text-[#8A7D68]/45">
+                    <span className="inline-block w-5 font-mono text-[11px]">·</span>
+                    Checking this photo is real…
+                  </p>
+                ) : workStage === 'aicheck' ? (
+                  <p className="text-[13px] text-[#2A2118]">
+                    <span className="inline-block w-5 font-mono text-[11px] animate-pulse">—</span>
+                    Checking this photo is real…
+                  </p>
+                ) : (
+                  <p className="text-[13px] text-[#2A2118]">
+                    <span className="inline-block w-5 font-mono text-[11px]">
+                      {aiVerdict === 'ai' || aiVerdict === 'inconclusive' ? '!' : '✓'}
+                    </span>
+                    {aiVerdict === 'ai'
+                      ? 'Photo flagged as AI-made — result will be marked unverified'
+                      : aiVerdict === 'inconclusive'
+                      ? 'Photo check inconclusive — result will be marked unverified'
+                      : 'Photo looks real'}
+                    {checkerNote && (
+                      <span className="block text-xs text-[#A87F2A] mt-0.5 ml-5">{checkerNote}</span>
+                    )}
+                  </p>
+                )}
+                {/* 3. Estimate steps */}
+                {workStage === 'estimate' && ANALYSIS_STEPS.map((label, i) => {
                   const done = i < completedSteps;
                   const active = i === activeStep;
                   return (
@@ -1162,12 +1325,24 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                       key={label}
                       className={`text-[13px] transition-all duration-300 ${done ? 'text-[#8A7D68]' : active ? 'text-[#2A2118]' : 'text-[#8A7D68]/45'}`}
                     >
-                      <span className="inline-block w-5 font-mono text-[11px]">{done ? '·' : active ? '—' : '·'}</span>
-                      {label}
+                      <span className="inline-block w-5 font-mono text-[11px]">{done ? '✓' : active ? '—' : '·'}</span>
+                      {label}{active ? '…' : ''}
                     </p>
                   );
                 })}
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  runTokenRef.current += 1;
+                  setPhase('adjust');
+                  setWorkStage('quality');
+                  setCheckerNote(null);
+                }}
+                className="mt-6 self-start text-sm text-[#8A7D68] hover:text-[#9C4A42] underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Stop — back to details
+              </button>
             </div>
           </div>
         </div>
@@ -1186,22 +1361,45 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
           {/* The finding — what was analyzed → discovered */}
           <div className="washi-sheet px-6 sm:px-10 pt-8 sm:pt-10 pb-8 text-center overflow-hidden">
             <p className="eyebrow-quiet">{warehouse.code} · {warehouse.receiptNumber} · {SEASON_PROFILES[season].name}</p>
-            <p className="mt-3 inline-flex items-center gap-2 text-[13px] text-[#6B5F4F]">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: verdictTone.dot }} />
-              {verdictTone.word} · {estimationResult.confidencePercent}% sure
-            </p>
-            <h2 className="serif-reading text-[#2A2118] text-[26px] sm:text-3xl mt-2">
-              {verdictTone.sentence}
-            </h2>
-            <div className="flex items-baseline justify-center gap-2 mt-4">
-              <span className="serif-reading text-[#2A2118] text-6xl sm:text-7xl leading-none">
-                {estimationResult.centralEstimateTonnes.toFixed(1)}
-              </span>
-              <span className="font-mono text-sm text-[#8A7D68]">tonnes</span>
-            </div>
-            <p className="font-mono text-xs text-[#8A7D68] mt-3">
-              likely between {estimationResult.rangeLowTonnes.toFixed(1)} and {estimationResult.rangeHighTonnes.toFixed(1)} T
-            </p>
+            {(aiVerdict === 'ai' || aiVerdict === 'inconclusive') ? (
+              <>
+                <p className="mt-3 inline-flex items-center gap-2 text-[13px] font-bold text-white bg-[#9C4A42] px-4 py-2 rounded-full">
+                  <span>⚠️ UNVERIFIED</span>
+                </p>
+                <h2 className="serif-reading text-[#2A2118] text-[26px] sm:text-3xl mt-3">
+                  This image could not be confirmed as genuine and should not be used as audit evidence.
+                </h2>
+                <p className="font-mono text-sm text-[#2A2118] mt-4">
+                  Your receipt says {runDeclared.toFixed(1)} T
+                </p>
+                <p className="font-mono text-xs text-[#8A7D68]/70 line-through mt-2">
+                  estimated {estimationResult.centralEstimateTonnes.toFixed(1)} T
+                  ({estimationResult.rangeLowTonnes.toFixed(1)}–{estimationResult.rangeHighTonnes.toFixed(1)} T)
+                </p>
+                <p className="font-mono text-[11px] text-[#8A7D68] mt-1">
+                  untrusted estimate — not evidence
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-3 inline-flex items-center gap-2 text-[13px] text-[#6B5F4F]">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: verdictTone.dot }} />
+                  {verdictTone.word} · {estimationResult.confidencePercent}% sure
+                </p>
+                <h2 className="serif-reading text-[#2A2118] text-[26px] sm:text-3xl mt-2">
+                  {verdictTone.sentence}
+                </h2>
+                <div className="flex items-baseline justify-center gap-2 mt-4">
+                  <span className="serif-reading text-[#2A2118] text-6xl sm:text-7xl leading-none">
+                    {estimationResult.centralEstimateTonnes.toFixed(1)}
+                  </span>
+                  <span className="font-mono text-sm text-[#8A7D68]">tonnes</span>
+                </div>
+                <p className="font-mono text-xs text-[#8A7D68] mt-3">
+                  likely between {estimationResult.rangeLowTonnes.toFixed(1)} and {estimationResult.rangeHighTonnes.toFixed(1)} T
+                </p>
+              </>
+            )}
 
             {/* Why it matters — the quiet ledger */}
             <div className="max-w-md mx-auto mt-7 pt-6 border-t border-[rgba(42,33,24,0.12)] grid grid-cols-3 gap-4 text-center">
@@ -1211,9 +1409,13 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
               </div>
               <div>
                 <p className="eyebrow-quiet">Difference</p>
-                <p className="font-mono text-[15px] mt-1" style={{ color: Math.abs(diff) < 0.5 ? '#4A6B4F' : diff < 0 ? '#9C4A42' : '#A87F2A' }}>
-                  {diff > 0 ? '+' : ''}{diff.toFixed(1)} T
-                </p>
+                {(aiVerdict === 'ai' || aiVerdict === 'inconclusive') ? (
+                  <p className="font-mono text-[15px] mt-1 text-[#8A7D68]/70">withheld</p>
+                ) : (
+                  <p className="font-mono text-[15px] mt-1" style={{ color: Math.abs(diff) < 0.5 ? '#4A6B4F' : diff < 0 ? '#9C4A42' : '#A87F2A' }}>
+                    {diff > 0 ? '+' : ''}{diff.toFixed(1)} T
+                  </p>
+                )}
               </div>
               <div>
                 <p className="eyebrow-quiet">Volume seen</p>
@@ -1221,63 +1423,22 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
               </div>
             </div>
             <p className="text-xs text-[#8A7D68] mt-4">
-              Paper says {runDeclared.toFixed(1)} T ({declaredTouched ? 'your hand' : 'registry'}). The pile suggests {estimationResult.centralEstimateTonnes.toFixed(1)} T.
+              {(aiVerdict === 'ai' || aiVerdict === 'inconclusive')
+                ? `Paper says ${runDeclared.toFixed(1)} T (${declaredTouched ? 'your hand' : 'registry'}). The pile could not be verified — no estimate counts as evidence.`
+                : `Paper says ${runDeclared.toFixed(1)} T (${declaredTouched ? 'your hand' : 'registry'}). The pile suggests ${estimationResult.centralEstimateTonnes.toFixed(1)} T.`}
             </p>
 
-          {/* Proof chain — reverse → physics → bankable (same math, one story) */}
-          {(() => {
-            const rev = reverseProof(runDeclared, baseDiameterMeters, heightMeters, {
-              grainType, season, humidityPercent, compaction, storageDays,
-            });
-            const geo = reposeVerdict(heightMeters, baseDiameterMeters);
-            const reqDeg = reposeDeg(rev.requiredHeightM, baseDiameterMeters);
-            const bank = bankableTonnes(
-              estimationResult.rangeLowTonnes, estimationResult.confidencePercent, humidityPercent, true,
-            );
-            const price = parseFloat(priceText);
-            return (
-              <div className="mt-8 space-y-4 text-left">
-                <div className="text-center font-mono text-[11px] text-[#8A7D68]">
-                  {runDeclared.toFixed(1)}T CLAIMED · {bank.bankableTonnes.toFixed(1)}T DEFENSIBLE ·{' '}
-                  <span className={rev.supported ? 'text-[#4A6B4F]' : 'text-[#9C4A42]'}>
-                    {rev.supported ? 'CLAIM SUPPORTED' : 'CLAIM NOT SUPPORTED'}
-                  </span>
-                </div>
-                <ReverseProofBlock proof={rev} />
-                <PhysicsCheckBlock verdict={geo} requiredDeg={reqDeg} />
-                <div className="washi-sheet px-5 py-4">
-                  <label className="block">
-                    <span className="eyebrow-quiet">Price ₹/tonne (optional — for collateral value)</span>
-                    <input
-                      type="number" min="0" inputMode="numeric" value={priceText}
-                      onChange={(e) => setPriceText(e.target.value)}
-                      placeholder="e.g. 26000"
-                      className="mt-1 w-full bg-transparent font-mono text-lg text-[#2A2118] border-b border-[rgba(42,33,24,0.2)] focus:outline-none pb-1"
-                    />
-                  </label>
-                </div>
-                <BankableBlock
-                  bankable={bank}
-                  claimed={runDeclared}
-                  rangeLow={estimationResult.rangeLowTonnes}
-                  rangeHigh={estimationResult.rangeHighTonnes}
-                  pricePerTonne={Number.isFinite(price) && price > 0 ? price : undefined}
-                />
-              </div>
-            );
-          })()}
+          {/* Full breakdown lives in the dedicated tabs */}
+          <div className="mt-8 washi-sheet px-5 py-4 text-center">
+            <p className="text-sm text-[#2A2118]">Want the full breakdown of this reading?</p>
+            <p className="font-mono text-[11px] text-[#8A7D68] mt-1">
+              See the Reverse Proof, Geometry and Bankable tabs — same pile, full detail.
+            </p>
+          </div>
 
           {/* What was analyzed — the pile, large and clear */}
           <div className="mt-8 text-left">
             <p className="eyebrow-quiet mb-2">Whole pile → geometry → calculation</p>
-            <div className="space-y-3 mb-4">
-              <DetectReportCard
-                primary={detectPrimary}
-                cross={detectCross}
-                pending={detectPending}
-                onRetry={() => photo && void runDetection(photo)}
-              />
-            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <figure>
               <div className="rounded-[12px] overflow-hidden border border-[rgba(42,33,24,0.12)] bg-[#221A12] p-1.5">
@@ -1330,25 +1491,53 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 
           {/* What next — calm, unhurried */}
           <div className="mt-6">
-          {savedVerification ? (
-            <div className="washi-sheet px-5 py-4 flex items-start gap-3">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#4A6B4F] shrink-0" />
-              <p className="text-sm leading-relaxed text-[#2A2118]">
-                Kept in the registry as {savedVerification.id}. It now rests with the portfolio and the review queue.
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-stretch gap-3">
+          {savedFarmerCode && (
+            <div className="bg-emerald-50 border border-emerald-300 rounded-[12px] px-5 py-4 mb-4 text-center space-y-2">
+              <p className="text-sm text-[#2A2118]">✅ Saved to your records.</p>
+              <p className="font-mono text-2xl font-bold tracking-widest text-[#2A2118]">{savedFarmerCode}</p>
+              {savedVerifyId ? (
+                <div className="pt-1 space-y-2">
+                  {savedQr ? (
+                    <img src={savedQr} alt="Verification QR code" className="mx-auto w-40 h-40 rounded-lg border border-[#3D3226]/15 bg-white p-1" />
+                  ) : (
+                    <p className="font-mono text-[11px] text-[#8A7D68]">Preparing QR…</p>
+                  )}
+                  <p className="font-mono text-[11px] text-[#2A2118] break-all">{savedVerifyId}</p>
+                  <p className="text-xs text-[#2B2016]/60">
+                    Scan to verify this check against the true stored record — an edited report can't fake it.
+                  </p>
+                </div>
+              ) : (
+                <p className="font-mono text-[11px] text-[#A87F2A]">
+                  Verification QR pending — reconnect and save again to get it.
+                </p>
+              )}
               <button
                 type="button"
-                onClick={handleSaveAudit}
-                disabled={isSaving}
-                className="touch-target flex-1 px-6 py-3.5 bg-[#2A2118] hover:bg-[#3A2E20] text-[#F6F1E7] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_8px_24px_-8px_rgba(42,33,24,0.5)] disabled:opacity-50"
+                onClick={onViewRecords}
+                className="touch-target text-sm text-[#2A2118] underline underline-offset-4 decoration-[#4A6B4F]/50 cursor-pointer"
               >
-                {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                <span>{isSaving ? 'Keeping…' : 'Keep this reading'}</span>
+                See it in Records
               </button>
-              <div className="flex items-center justify-center gap-5">
+            </div>
+          )}
+          {farmerSaveMsg && (
+            <div className="bg-red-50 border border-[#B5574F]/40 rounded-[12px] px-5 py-3 mb-4 text-sm text-[#B23A32]">
+              {farmerSaveMsg}
+            </div>
+          )}
+          <div className="flex flex-col sm:flex-row items-stretch gap-3">
+            <button
+              type="button"
+              onClick={handleSaveToRecords}
+              disabled={isSavingFarmer}
+              title="Save this completed audit to your Records"
+              className="touch-target flex-1 px-6 py-3.5 bg-[#2A2118] hover:bg-[#3A2E20] text-[#F6F1E7] text-sm font-bold rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_8px_24px_-8px_rgba(42,33,24,0.5)] disabled:opacity-50"
+            >
+              {isSavingFarmer ? <RefreshCw className="w-4 h-4 animate-spin" /> : <BookmarkPlus className="w-4 h-4" />}
+              <span>{isSavingFarmer ? 'Saving…' : 'Save to Records'}</span>
+            </button>
+            <div className="flex items-center justify-center gap-5">
                 <button
                   type="button"
                   onClick={handlePrintReport}
@@ -1368,7 +1557,6 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                 </button>
               </div>
             </div>
-          )}
           <button
             type="button"
             onClick={resetWorkflow}

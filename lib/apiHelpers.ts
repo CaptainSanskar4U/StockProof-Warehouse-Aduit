@@ -12,7 +12,7 @@ export function readBody<T = unknown>(req: VercelRequest): T {
     try {
       return JSON.parse(body) as T;
     } catch {
-      return {} as T;
+      throw new Error('Invalid JSON body');
     }
   }
   return (body ?? {}) as T;

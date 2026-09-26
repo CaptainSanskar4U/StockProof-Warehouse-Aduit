@@ -59,7 +59,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
 
   // --- Step 2: Geometry and Context Inputs ---
-  const defaultGrain = (warehouse.grainTypes[0] as GrainType) || 'wheat';
+  const defaultGrain = (warehouse.grainTypes?.[0] as GrainType) || 'wheat';
   const [heightMeters, setHeightMeters] = useState<number>(3.8);
   const [baseDiameterMeters, setBaseDiameterMeters] = useState<number>(10.5);
   const [measurementMethod, setMeasurementMethod] = useState<GeometryInputs['measurementMethod']>('laser_assisted');
@@ -245,7 +245,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}) as { error?: string });
         throw new Error(err.error || 'Failed to save verification');
       }
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Warehouse, Verification, Season } from '../types.js';
+import { Warehouse, Verification, Season, FarmerCheck } from '../types.js';
+import { fetchFarmerChecksByFarmer } from '../services/api.js';
 import { StatusChip } from './StatusChip.js';
 import { RangeBar } from './RangeBar.js';
 import { SafeImage } from './SafeImage.js';
@@ -35,10 +36,18 @@ export const WarehouseDetailModal: React.FC<WarehouseDetailModalProps> = ({
   const [verifications, setVerifications] = useState<Verification[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [selectedRun, setSelectedRun] = useState<Verification | null>(null);
+  // Farmer self-check history — READ-ONLY background context, keyed by
+  // borrower name. Never a feed, never writable from here.
+  const [farmerChecks, setFarmerChecks] = useState<FarmerCheck[]>([]);
+  const [farmerHistoryOpen, setFarmerHistoryOpen] = useState<boolean>(false);
+  const [farmerHistoryLoaded, setFarmerHistoryLoaded] = useState<boolean>(false);
 
   useEffect(() => {
     if (warehouse) {
       setIsLoadingHistory(true);
+      setFarmerChecks([]);
+      setFarmerHistoryLoaded(false);
+      setFarmerHistoryOpen(false);
       fetch(`/api/verifications?warehouseId=${warehouse.id}`)
         .then((res) => res.json())
         .then((data) => {
@@ -55,6 +64,21 @@ export const WarehouseDetailModal: React.FC<WarehouseDetailModalProps> = ({
   }, [warehouse]);
 
   if (!warehouse) return null;
+
+  const loadFarmerHistory = () => {
+    setFarmerHistoryOpen((open) => {
+      const next = !open;
+      if (next && !farmerHistoryLoaded && warehouse.borrowerName) {
+        fetchFarmerChecksByFarmer(warehouse.borrowerName)
+          .then((data) => {
+            setFarmerChecks(data);
+            setFarmerHistoryLoaded(true);
+          })
+          .catch((err) => console.error('Error fetching farmer self-check history:', err));
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-[#2B2016]/60 backdrop-blur-sm overflow-y-auto">
@@ -281,6 +305,66 @@ export const WarehouseDetailModal: React.FC<WarehouseDetailModalProps> = ({
                       <strong className="text-[#3D3226]">Recommendation:</strong> {selectedRun.auditRecommendation}
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Farmer self-check history — read-only background context.
+              Lookup-triggered only; never a feed, never writable. */}
+          <div className="border border-[#3D3226]/10 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={loadFarmerHistory}
+              className="w-full px-4 py-3 bg-[#F5F0E8] hover:bg-[#EFE7D4] flex items-center justify-between gap-3 cursor-pointer transition-colors"
+            >
+              <span className="flex items-center gap-2 text-xs font-mono tracking-wider text-[#2B2016]/60 uppercase">
+                <User className="w-4 h-4 text-[#B98A2E]" />
+                <span>Farmer self-check history — {warehouse.borrowerName}</span>
+              </span>
+              <span className="text-xs font-mono text-[#2B2016]/55">{farmerHistoryOpen ? '▾' : '▸'}</span>
+            </button>
+            {farmerHistoryOpen && (
+              <div className="p-4 bg-white space-y-2">
+                <p className="text-[11px] font-mono text-[#2B2016]/55">
+                  Background context only — self-checks by the farmer. Read-only; not part of the official audit record.
+                </p>
+                {farmerChecks.length === 0 ? (
+                  <p className="text-xs font-mono text-[#2B2016]/55 py-2">
+                    {farmerHistoryLoaded ? 'No self-checks recorded under this name.' : 'Loading…'}
+                  </p>
+                ) : (
+                  farmerChecks.map((c) => {
+                    const unverified = c.photoVerdict === 'ai' || c.photoVerdict === 'inconclusive';
+                    return (
+                      <div key={c.id} className="border border-[#3D3226]/10 rounded-lg px-3 py-2.5 text-xs font-mono">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-[#3D3226]">{c.id}</span>
+                          <span className="text-[#2B2016]/55">{new Date(c.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <div className="mt-1 text-[#2B2016]/70">
+                          Declared {c.declaredTonnes} T
+                          {unverified ? (
+                            <span className="text-[#8A7D68]/80"> · <span className="line-through">estimate withheld</span> · untrusted — not evidence</span>
+                          ) : (
+                            <span> · estimated {c.estLow}–{c.estHigh} T</span>
+                          )}
+                        </div>
+                        <div className="mt-1.5">
+                          {unverified ? (
+                            <span className="bg-[#8A7D68]/15 text-[#6B5F4F] px-2 py-0.5 rounded-full font-bold">⚠️ UNVERIFIED ({c.photoVerdict})</span>
+                          ) : c.match ? (
+                            <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">✅ match</span>
+                          ) : (
+                            <span className="bg-red-100 text-[#B23A32] px-2 py-0.5 rounded-full font-bold">🚨 discrepancy</span>
+                          )}
+                          {c.photoVerdict === 'unchecked' && (
+                            <span className="ml-2 text-[#A87F2A]">authenticity unchecked</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             )}

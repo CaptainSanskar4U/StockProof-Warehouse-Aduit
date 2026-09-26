@@ -96,8 +96,8 @@ export const PhotoGateBanner: React.FC<{ quality: PhotoQuality | null }> = ({ qu
       <div>
         <p className="text-sm text-[#2A2118]"><strong>PHOTO NOT SUITABLE</strong> — capture the entire grain pile from farther away. Make sure the full pile is visible in one frame.</p>
         <ul className="text-xs text-[#6B5F4F] mt-1.5 space-y-0.5">
-          {quality.reasons.map((r) => (
-            <li key={r}>· {r}</li>
+          {quality.reasons.map((r, i) => (
+            <li key={`${i}-${r}`}>· {r}</li>
           ))}
         </ul>
       </div>

@@ -13,7 +13,11 @@
       "destination": "/api/warehouses?id=:id"
     },
     {
-      "source": "/((?!api/|assets/|favicon\\.svg).*)",
+      "source": "/api/farmer-checks/:id",
+      "destination": "/api/farmer-checks?id=:id"
+    },
+    {
+      "source": "/((?!api/|assets/|.*\\.png$|.*\\.jpe?g$|.*\\.svg$|.*\\.ico$|.*\\.webp$|.*\\.woff2?$|favicon\\.ico).*)",
       "destination": "/index.html"
     }
   ],

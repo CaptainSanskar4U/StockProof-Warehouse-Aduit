@@ -283,7 +283,7 @@ export const ReviewQueueView: React.FC<ReviewQueueViewProps> = ({
                       <div className="space-y-1.5">
                         {item.notes.map((n, idx) => (
                           <div
-                            key={idx}
+                            key={`${idx}-${n.slice(0, 16)}`}
                             className="text-xs font-mono text-[#2B2016]/70 bg-white p-2.5 rounded border border-[#3D3226]/10 leading-relaxed"
                           >
                             {n}

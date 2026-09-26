@@ -34,19 +34,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const updates: Partial<ReviewItem> = {};
-      if (status) updates.status = status;
+      if (status) {
+        if (!['open', 'resolved', 'escalated'].includes(status)) {
+          return res.status(400).json({ error: 'Invalid review status' });
+        }
+        updates.status = status;
+      }
       if (resolutionType) updates.resolutionType = resolutionType;
-      if (priority) updates.priority = priority as ReviewItem['priority'];
+      if (priority) {
+        if (!['routine', 'medium', 'urgent'].includes(priority)) {
+          return res.status(400).json({ error: 'Invalid review priority' });
+        }
+        updates.priority = priority as ReviewItem['priority'];
+      }
       if (assignedTo) updates.assignedTo = assignedTo;
       if (status === 'resolved') {
         updates.resolvedAt = new Date().toISOString();
       }
       if (note && typeof note === 'string') {
-        const timestampStr = new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        updates.notes = [...existing.notes, `[${timestampStr}] ${note}`];
+        updates.notes = [...existing.notes, `[${new Date().toISOString()}] ${note}`];
       }
 
       const updated = await updateReview(id, updates);

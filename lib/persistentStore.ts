@@ -14,6 +14,7 @@ import {
   type StorageData,
 } from '../server/store.js';
 import type {
+  FarmerCheck,
   PortfolioSummary,
   ReviewItem,
   Verification,
@@ -24,6 +25,7 @@ const KEYS = {
   warehouses: 'stockproof:warehouses',
   verifications: 'stockproof:verifications',
   reviews: 'stockproof:reviews',
+  farmerChecks: 'stockproof:farmerChecks',
 } as const;
 
 function redisConfigured(): boolean {
@@ -48,6 +50,7 @@ function freshSeed(): StorageData {
     warehouses: JSON.parse(JSON.stringify(INITIAL_WAREHOUSES)),
     verifications: JSON.parse(JSON.stringify(INITIAL_VERIFICATIONS)),
     reviews: JSON.parse(JSON.stringify(INITIAL_REVIEWS)),
+    farmerChecks: [],
   };
 }
 
@@ -57,15 +60,19 @@ async function load(): Promise<StorageData> {
   const redis = getRedis();
   if (redis) {
     try {
-      const [warehouses, verifications, reviews] = await Promise.all([
+      const [warehouses, verifications, reviews, farmerChecks] = await Promise.all([
         redis.get<Warehouse[]>(KEYS.warehouses),
         redis.get<Verification[]>(KEYS.verifications),
         redis.get<ReviewItem[]>(KEYS.reviews),
+        redis.get<FarmerCheck[]>(KEYS.farmerChecks),
       ]);
       if (warehouses && verifications && reviews) {
-        return { warehouses, verifications, reviews };
+        // farmerChecks may predate the key — default, never reseed QR'd records.
+        return { warehouses, verifications, reviews, farmerChecks: farmerChecks ?? [] };
       }
       const seed = freshSeed();
+      // Never wipe existing QR'd farmer checks on partial Redis eviction.
+      seed.farmerChecks = farmerChecks ?? mem?.farmerChecks ?? [];
       await save(seed);
       return seed;
     } catch (err) {
@@ -84,6 +91,7 @@ async function save(data: StorageData): Promise<void> {
         redis.set(KEYS.warehouses, data.warehouses),
         redis.set(KEYS.verifications, data.verifications),
         redis.set(KEYS.reviews, data.reviews),
+        redis.set(KEYS.farmerChecks, data.farmerChecks ?? []),
       ]);
       return;
     } catch (err) {
@@ -107,12 +115,12 @@ export async function getWarehouses(status?: string, search?: string): Promise<W
     const q = search.toLowerCase();
     warehouses = warehouses.filter(
       (w) =>
-        w.name.toLowerCase().includes(q) ||
-        w.code.toLowerCase().includes(q) ||
-        w.district.toLowerCase().includes(q) ||
-        w.state.toLowerCase().includes(q) ||
-        w.receiptNumber.toLowerCase().includes(q) ||
-        w.borrowerName.toLowerCase().includes(q),
+        (w.name ?? '').toLowerCase().includes(q) ||
+        (w.code ?? '').toLowerCase().includes(q) ||
+        (w.district ?? '').toLowerCase().includes(q) ||
+        (w.state ?? '').toLowerCase().includes(q) ||
+        (w.receiptNumber ?? '').toLowerCase().includes(q) ||
+        (w.borrowerName ?? '').toLowerCase().includes(q),
     );
   }
   return warehouses;
@@ -271,7 +279,35 @@ export async function getPortfolioSummary(): Promise<PortfolioSummary> {
 }
 
 export async function resetToDefaults(): Promise<PortfolioSummary> {
+  // Demo reset restores Inspector seeds but NEVER wipes farmer self-checks —
+  // QR verification links must keep resolving.
+  const data = await load();
   const seed = freshSeed();
+  seed.farmerChecks = data.farmerChecks ?? [];
   await save(seed);
   return getPortfolioSummary();
+}
+
+// ---- Farmer self-checks (namespaced; read-only for Inspectors) ----
+
+export async function addFarmerCheck(check: FarmerCheck): Promise<FarmerCheck> {
+  const data = await load();
+  data.farmerChecks = [check, ...(data.farmerChecks ?? [])];
+  await save(data);
+  return check;
+}
+
+export async function getFarmerCheckById(id: string): Promise<FarmerCheck | undefined> {
+  const data = await load();
+  return (data.farmerChecks ?? []).find((c) => c.id === id);
+}
+
+/** Read-only farmer history, exact name match (case-insensitive). */
+export async function getFarmerChecksByFarmer(name: string): Promise<FarmerCheck[]> {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return [];
+  const data = await load();
+  return (data.farmerChecks ?? [])
+    .filter((c) => c.farmerName.trim().toLowerCase() === needle)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }

@@ -22,6 +22,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         photoUrl?: string;
         mediaType?: string;
         referenceScale?: string;
+        receiptPhotoUrl?: string;
+        declaredSource?: string;
         geometry?: Verification['geometry'];
         context?: Verification['context'];
         declaredTonnes?: number;
@@ -32,6 +34,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         photoUrl,
         mediaType,
         referenceScale,
+        receiptPhotoUrl,
+        declaredSource,
         geometry,
         context,
         declaredTonnes,
@@ -51,10 +55,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const finalDeclared =
         typeof declaredTonnes === 'number' ? declaredTonnes : warehouse.currentDeclaredTonnes;
+      if (!Number.isFinite(finalDeclared)) {
+        return res.status(400).json({ error: 'declaredTonnes must be a finite number' });
+      }
       const normalizedContext = withSeasonDefaults(context);
+      const providedVolume = Number(geometry.calculatedVolumeM3);
       const calculatedVolume =
-        geometry.calculatedVolumeM3 > 0
-          ? geometry.calculatedVolumeM3
+        Number.isFinite(providedVolume) && providedVolume > 0
+          ? providedVolume
           : calculatePileVolume(
               geometry.heightMeters,
               geometry.baseDiameterMeters,
@@ -75,6 +83,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         photoUrl: photoUrl || warehouse.pilePhotoUrl || SAMPLE_GRAIN_IMAGES.wheat_pile,
         mediaType: mediaType === 'video-frame' ? 'video-frame' : 'photo',
         referenceScale: typeof referenceScale === 'string' ? referenceScale : undefined,
+        receiptPhotoUrl: typeof receiptPhotoUrl === 'string' && receiptPhotoUrl.length > 0 ? receiptPhotoUrl : undefined,
+        declaredSource: declaredSource === 'manual' ? 'manual' : 'registry',
         geometry: {
           ...geometry,
           calculatedVolumeM3: Number(calculatedVolume.toFixed(1)),
