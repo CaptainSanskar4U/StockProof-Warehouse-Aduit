@@ -5,8 +5,20 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/gov-checks",
+      "destination": "/api/checks"
+    },
+    {
       "source": "/api/gov-checks/:id",
-      "destination": "/api/gov-checks?id=:id"
+      "destination": "/api/checks?id=:id"
+    },
+    {
+      "source": "/api/farmer-checks",
+      "destination": "/api/checks"
+    },
+    {
+      "source": "/api/farmer-checks/:id",
+      "destination": "/api/checks?id=:id"
     },
     {
       "source": "/api/reviews/:id",
@@ -15,10 +27,6 @@
     {
       "source": "/api/warehouses/:id",
       "destination": "/api/warehouses?id=:id"
-    },
-    {
-      "source": "/api/farmer-checks/:id",
-      "destination": "/api/farmer-checks?id=:id"
     },
     {
       "source": "/((?!api/|assets/|.*\\.png$|.*\\.jpe?g$|.*\\.svg$|.*\\.ico$|.*\\.webp$|.*\\.woff2?$|favicon\\.ico).*)",
