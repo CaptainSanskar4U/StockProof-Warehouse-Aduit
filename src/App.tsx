@@ -242,10 +242,10 @@ export default function App() {
     }
   });
 
-  // Scanning a QR should land on the working panel, never the marketing landing.
-  useEffect(() => {
-    if (verifyId) setCurrentView('dashboard');
-  }, [verifyId]);
+  // A scanned QR is a view-only window onto one record. currentView is left on
+  // 'overview' so the console (Header, Dashboard, AuditRecords, Profile) never
+  // mounts behind the popup - the blurred marketing page is the backdrop
+  // instead, and no console navigation is reachable without authenticating.
 
   const closeVerification = useCallback(() => {
     setVerifyId(null);
@@ -257,7 +257,13 @@ export default function App() {
     } catch {
       /* history is unavailable — the popup still closes */
     }
-  }, []);
+    // Never leave an unauthenticated visitor on the console: the QR window is
+    // view-only, so dismissing it returns them to the public landing page.
+    if (!role) {
+      setCurrentView('overview');
+      setActiveVerificationWarehouse(null);
+    }
+  }, [role]);
 
   // ?report=<verificationId> renders the printable official report and owns the
   // whole page. Unlike ?verify= (which must live inside the app as a popup), a
@@ -302,12 +308,16 @@ export default function App() {
     return <ReportPrintView verificationId={reportId} onExit={closeReport} />;
   }
 
-  // A locked console sits behind the login popup, blurred and inert.
-  const lockClass = isConsoleLocked ? 'blur-md pointer-events-none select-none' : '';
+  // A locked surface sits behind two different modals: the login popup, and the
+  // public QR verification popup. Both blur the page and make it inert, so
+  // neither the keyboard nor a click can reach content behind the modal. The
+  // modals themselves render outside this wrapper, so they stay sharp.
+  const isLocked = isConsoleLocked || verifyId !== null;
+  const lockClass = isLocked ? 'blur-md pointer-events-none select-none' : '';
 
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)] flex flex-col font-sans">
-      <div className={lockClass} aria-hidden={isConsoleLocked || undefined} inert={isConsoleLocked || undefined}>
+      <div className={lockClass} aria-hidden={isLocked || undefined} inert={isLocked || undefined}>
       {role === 'farmer' ? (
         <FarmerPanel
           greeting={greeting}
