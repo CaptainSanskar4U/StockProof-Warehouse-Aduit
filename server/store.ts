@@ -315,9 +315,13 @@ class StorageManager {
         mutated = true;
       }
     }
-    // Profile field added later — default to null without overwriting a saved profile.
+    // Profile field added later. A storage.json written before profiles existed
+    // has no `profile` key at all, so there is no saved identity to protect:
+    // seed the demo inspector rather than leaving every audit signed "Field
+    // Inspector". An existing profile (even a null one the user cleared) is
+    // never overwritten.
     if (!('profile' in parsed)) {
-      (parsed as StorageData).profile = null;
+      (parsed as StorageData).profile = JSON.parse(JSON.stringify(DEMO_PROFILE));
       mutated = true;
     }
     // QR gov-checks must survive everything, including resets — never reseed them.
@@ -575,7 +579,7 @@ class StorageManager {
       warehouses: INITIAL_WAREHOUSES,
       verifications: INITIAL_VERIFICATIONS,
       reviews: INITIAL_REVIEWS,
-      profile: this.data.profile || null,
+      profile: this.data.profile || JSON.parse(JSON.stringify(DEMO_PROFILE)),
       govChecks: preserved,
       farmerChecks: preservedFarmer,
     };
