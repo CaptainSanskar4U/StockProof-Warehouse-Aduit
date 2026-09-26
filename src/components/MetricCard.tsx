@@ -20,18 +20,18 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   className = '',
 }) => {
   const accentClasses = {
-    gold: 'text-[#B98A2E]',
-    green: 'text-emerald-700',
-    red: 'text-red-700',
-    neutral: 'text-[#3D3226]',
+    gold: 'text-[var(--gold)]',
+    green: 'text-[var(--success-ink)]',
+    red: 'text-[var(--danger-ink)]',
+    neutral: 'text-[var(--ink-2)]',
   }[accentColor];
 
   return (
     <div
-      className={`bg-white border border-[#3D3226]/10 rounded-lg p-4 relative flex flex-col justify-between ${className}`}
+      className={`bg-[var(--sheet)] border border-[var(--hairline)] rounded-lg p-4 relative flex flex-col justify-between ${className}`}
     >
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-[11px] font-mono tracking-widest text-[#2B2016]/55 uppercase select-none">
+        <span className="text-[11px] font-mono tracking-widest text-[var(--ink-soft)] uppercase select-none">
           {label}
         </span>
         {badge}
@@ -42,14 +42,14 @@ export const MetricCard: React.FC<MetricCardProps> = ({
           {value}
         </span>
         {unit && (
-          <span className="text-xs sm:text-sm font-mono text-[#2B2016]/55 font-normal">
+          <span className="text-xs sm:text-sm font-mono text-[var(--ink-soft)] font-normal">
             {unit}
           </span>
         )}
       </div>
 
       {subtitle && (
-        <p className="text-xs text-[#2B2016]/60 mt-1 line-clamp-1">
+        <p className="text-xs text-[var(--ink-soft)] mt-1 line-clamp-1">
           {subtitle}
         </p>
       )}

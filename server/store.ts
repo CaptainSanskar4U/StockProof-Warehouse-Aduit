@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { Warehouse, Verification, ReviewItem, PortfolioSummary, GrainType } from '../src/types.js';
+import { Warehouse, Verification, ReviewItem, PortfolioSummary, GrainType, InspectorProfile, GovCheck } from '../src/types.js';
 
 // Vercel serverless filesystem is read-only except /tmp — use it when deployed.
 const DATA_DIR = process.env.VERCEL
@@ -60,120 +60,6 @@ export const INITIAL_WAREHOUSES: Warehouse[] = [
     status: 'consistent',
     pilePhotoUrl: SAMPLE_GRAIN_IMAGES.soybean_pile,
   },
-  {
-    id: 'wh-003',
-    name: 'Kota Chambal Agro Vault',
-    code: 'KOT-CHM-09',
-    location: 'RIICO Industrial Area, Phase II',
-    district: 'Kota',
-    state: 'Rajasthan',
-    grainTypes: ['pulses', 'wheat'],
-    currentDeclaredTonnes: 142.0,
-    capacityTonnes: 220.0,
-    receiptNumber: 'WR-2026-78103',
-    receiptIssueDate: '2026-08-12',
-    loanReference: 'ICICI-RL-10294',
-    lendingBank: 'ICICI Bank Agri Finance',
-    borrowerName: 'Hadoti Pulse Aggregators LLP',
-    lastVerifiedDate: '2026-09-08T16:45:00Z',
-    status: 'review', // 3.8T difference near boundary
-    pilePhotoUrl: SAMPLE_GRAIN_IMAGES.pulses_pile,
-  },
-  {
-    id: 'wh-004',
-    name: 'Nizamabad Paddy Depot A',
-    code: 'NZB-PDY-02',
-    location: 'Armoor Road Logistics Park',
-    district: 'Nizamabad',
-    state: 'Telangana',
-    grainTypes: ['rice'],
-    currentDeclaredTonnes: 220.0,
-    capacityTonnes: 350.0,
-    receiptNumber: 'WR-2026-64119',
-    receiptIssueDate: '2026-08-05',
-    loanReference: 'NABARD-REF-8812',
-    lendingBank: 'NABARD Rural Development Banking',
-    borrowerName: 'Telangana Rice Milling Consortium',
-    lastVerifiedDate: '2026-09-11T09:30:00Z',
-    status: 'consistent',
-    pilePhotoUrl: SAMPLE_GRAIN_IMAGES.rice_pile,
-  },
-  {
-    id: 'wh-005',
-    name: 'Davangere Maize Hub',
-    code: 'DVG-MZE-05',
-    location: 'APMC Yard, Harihar Highway',
-    district: 'Davangere',
-    state: 'Karnataka',
-    grainTypes: ['maize'],
-    currentDeclaredTonnes: 160.0,
-    capacityTonnes: 280.0,
-    receiptNumber: 'WR-2026-55102',
-    receiptIssueDate: '2026-08-01',
-    loanReference: 'PNB-COMMOD-4401',
-    lendingBank: 'Punjab National Bank',
-    borrowerName: 'Cauvery Feed & Starch Products',
-    lastVerifiedDate: '2026-09-06T13:00:00Z',
-    status: 'high_priority', // Significant over-declaration flagged
-    pilePhotoUrl: SAMPLE_GRAIN_IMAGES.maize_pile,
-  },
-  {
-    id: 'wh-006',
-    name: 'Ludhiana GT Bulk Logistics',
-    code: 'LDH-LOG-11',
-    location: 'Sahnewal Dry Port Corridor',
-    district: 'Ludhiana',
-    state: 'Punjab',
-    grainTypes: ['wheat', 'barley'],
-    currentDeclaredTonnes: 210.0,
-    capacityTonnes: 400.0,
-    receiptNumber: 'WR-2026-99201',
-    receiptIssueDate: '2026-08-28',
-    loanReference: 'AXIS-AGRI-5928',
-    lendingBank: 'Axis Bank Agri Portfolio',
-    borrowerName: 'Doaba Grain Logistics Pvt Ltd',
-    lastVerifiedDate: '2026-09-13T10:00:00Z',
-    status: 'consistent',
-    pilePhotoUrl: SAMPLE_GRAIN_IMAGES.silo_interior,
-  },
-  {
-    id: 'wh-007',
-    name: 'Bhopal Agro Silo Complex',
-    code: 'BPL-SIL-03',
-    location: 'Mandideep Industrial Belt',
-    district: 'Bhopal',
-    state: 'Madhya Pradesh',
-    grainTypes: ['wheat', 'pulses'],
-    currentDeclaredTonnes: 125.0,
-    capacityTonnes: 200.0,
-    receiptNumber: 'WR-2026-44192',
-    receiptIssueDate: '2026-08-15',
-    loanReference: 'BOB-AG-30219',
-    lendingBank: 'Bank of Baroda',
-    borrowerName: 'Vindhya Commodities Corp',
-    lastVerifiedDate: '2026-09-04T15:20:00Z',
-    status: 'review',
-    pilePhotoUrl: SAMPLE_GRAIN_IMAGES.wheat_pile,
-  },
-  {
-    id: 'wh-008',
-    name: 'Warangal Grain Terminal 2',
-    code: 'WGL-TRM-07',
-    location: 'Enumamula Grain Market',
-    district: 'Warangal',
-    state: 'Telangana',
-    grainTypes: ['rice', 'maize'],
-    currentDeclaredTonnes: 175.0,
-    capacityTonnes: 250.0,
-    receiptNumber: 'WR-2026-72814',
-    receiptIssueDate: '2026-08-22',
-    loanReference: 'CANARA-AG-6019',
-    lendingBank: 'Canara Bank Rural Branch',
-    borrowerName: 'Kakatiya Agri Infrastructure FPO',
-    lastVerifiedDate: '2026-09-09T12:10:00Z',
-    status: 'consistent',
-    pilePhotoUrl: SAMPLE_GRAIN_IMAGES.rice_pile,
-  }
 ];
 
 export const INITIAL_VERIFICATIONS: Verification[] = [
@@ -207,88 +93,18 @@ export const INITIAL_VERIFICATIONS: Verification[] = [
     declaredAtTimeOfRun: 100.0,
     discrepancyTonnes: 10.6,
     status: 'high_priority',
+    agentType: 'bank',
+    bank: {
+      farmerName: 'Shivalik Agritech FPO Ltd.',
+      loanRef: 'AGRI-LN-772901',
+      warehouseName: 'Karnal Central Agro Terminal',
+    },
     explanatoryReason: 'Estimated range 84.2–89.4 T accounts for 110 m³ pile volume, Wheat bulk density (0.77 t/m³), medium compaction, Kharif season curve, and 12.8% moisture content over 25 days storage. Declared receipt of 100 T exceeds upper boundary by 10.6 T (+10.6%).',
     auditRecommendation: 'Review required before next loan disbursement. Recommend immediate on-site physical core sampling and laser depth re-verification.',
     runBy: {
       id: 'aud-01',
       name: 'Priya Sharma',
       role: 'Senior Field Auditor (North Zone)',
-    },
-  },
-  {
-    id: 'ver-102',
-    warehouseId: 'wh-003',
-    timestamp: '2026-09-08T16:45:00Z',
-    photoUrl: SAMPLE_GRAIN_IMAGES.pulses_pile,
-    geometry: {
-      pileType: 'cone',
-      heightMeters: 4.4,
-      baseDiameterMeters: 12.2,
-      calculatedVolumeM3: 171.4,
-      measurementMethod: 'ar_marker',
-    },
-    context: {
-      grainType: 'pulses',
-      season: 'rabi',
-      humidityPercent: 11.2,
-      compaction: 'medium',
-      storageDays: 27,
-    },
-    estimate: {
-      centralTonnes: 137.8,
-      rangeLow: 133.7,
-      rangeHigh: 141.9,
-      confidencePercent: 93,
-      effectiveDensity: 0.804,
-      volumeM3: 171.4,
-    },
-    declaredAtTimeOfRun: 142.0,
-    discrepancyTonnes: 0.1,
-    status: 'review',
-    explanatoryReason: 'Estimated range 133.7–141.9 T accounts for 171 m³ pile volume, Pulses bulk density (0.80 t/m³), medium compaction, Rabi season curve, and 11.2% moisture over 27 days storage. Declared receipt of 142 T is near the upper bound (+0.1 T difference).',
-    auditRecommendation: 'Procedural check recommended. Verify moisture calibration and confirm whether recent consolidation has occurred.',
-    runBy: {
-      id: 'aud-02',
-      name: 'Vikram Rajput',
-      role: 'Agri Commodity Inspector',
-    },
-  },
-  {
-    id: 'ver-103',
-    warehouseId: 'wh-005',
-    timestamp: '2026-09-06T13:00:00Z',
-    photoUrl: SAMPLE_GRAIN_IMAGES.maize_pile,
-    geometry: {
-      pileType: 'cone',
-      heightMeters: 4.8,
-      baseDiameterMeters: 12.0,
-      calculatedVolumeM3: 180.9,
-      measurementMethod: 'visual_estimate',
-    },
-    context: {
-      grainType: 'maize',
-      season: 'kharif',
-      humidityPercent: 14.5,
-      compaction: 'low',
-      storageDays: 36,
-    },
-    estimate: {
-      centralTonnes: 128.4,
-      rangeLow: 120.7,
-      rangeHigh: 136.1,
-      confidencePercent: 84,
-      effectiveDensity: 0.710,
-      volumeM3: 180.9,
-    },
-    declaredAtTimeOfRun: 160.0,
-    discrepancyTonnes: 23.9,
-    status: 'high_priority',
-    explanatoryReason: 'Estimated range 120.7–136.1 T accounts for 181 m³ pile volume, Maize bulk density (0.72 t/m³), aerated pile, Kharif season curve, and 14.5% moisture content over 36 days storage. Declared receipt of 160 T exceeds upper boundary by 23.9 T (+14.9%).',
-    auditRecommendation: 'High priority mismatch. Notify lending bank credit committee to freeze pledge release until complete physical survey is completed.',
-    runBy: {
-      id: 'aud-03',
-      name: 'K. Ramesh',
-      role: 'South Zone Collateral Auditor',
     },
   },
   {
@@ -321,6 +137,12 @@ export const INITIAL_VERIFICATIONS: Verification[] = [
     declaredAtTimeOfRun: 185.0,
     discrepancyTonnes: 0,
     status: 'consistent',
+    agentType: 'government',
+    gov: {
+      warehouseRef: 'IND-AGRI-04',
+      region: 'Indore, Madhya Pradesh',
+      scheme: 'Buffer Stock',
+    },
     explanatoryReason: 'Estimated range 180.6–191.8 T accounts for 248 m³ pile volume, Soybean bulk density (0.77 t/m³), dense compaction, Rabi season curve, and 11.8% moisture over 16 days storage. Declared receipt of 185 T falls comfortably within the physical confidence bounds.',
     auditRecommendation: 'Declared stock aligns with physical geometry and grain density parameters. Routine audit schedule maintained.',
     runBy: {
@@ -353,75 +175,63 @@ export const INITIAL_REVIEWS: ReviewItem[] = [
     ],
     createdAt: '2026-09-12T15:00:00Z',
   },
-  {
-    id: 'rev-02',
-    verificationId: 'ver-105',
-    warehouseId: 'wh-005',
-    warehouseName: 'Davangere Maize Hub',
-    warehouseLocation: 'Davangere, Karnataka',
-    grainType: 'maize',
-    season: 'kharif',
-    priority: 'urgent',
-    assignedTo: 'Nandini Swaminathan (Credit Lead)',
-    status: 'open',
-    declaredTonnes: 160.0,
-    estimatedRange: [120.7, 136.1],
-    discrepancyTonnes: 23.9,
-    confidencePercent: 84,
-    notes: [
-      'Substantial volume gap flagged. Pile height measurement was visual; scheduled calibrated laser verification for Sept 15.',
-      'Lending bank PNB informed to hold second tranche disbursement pending audit resolution.',
-    ],
-    createdAt: '2026-09-06T14:10:00Z',
-  },
-  {
-    id: 'rev-03',
-    verificationId: 'ver-102',
-    warehouseId: 'wh-003',
-    warehouseName: 'Kota Chambal Agro Vault',
-    warehouseLocation: 'Kota, Rajasthan',
-    grainType: 'pulses',
-    season: 'rabi',
-    priority: 'routine',
-    assignedTo: 'Priya Sharma (Field Auditor)',
-    status: 'open',
-    declaredTonnes: 142.0,
-    estimatedRange: [133.7, 141.9],
-    discrepancyTonnes: 0.1,
-    confidencePercent: 93,
-    notes: [
-      'Minor boundary variance (+0.1 T above high estimate). Re-checked moisture meter calibration; likely within standard sampling tolerance.',
-    ],
-    createdAt: '2026-09-08T17:00:00Z',
-  },
-  {
-    id: 'rev-04',
-    verificationId: 'ver-099',
-    warehouseId: 'wh-007',
-    warehouseName: 'Bhopal Agro Silo Complex',
-    warehouseLocation: 'Bhopal, Madhya Pradesh',
-    grainType: 'wheat',
-    season: 'rabi',
-    priority: 'medium',
-    assignedTo: 'Arjun Mehta (Risk VP)',
-    status: 'resolved',
-    declaredTonnes: 125.0,
-    estimatedRange: [118.0, 126.5],
-    discrepancyTonnes: 0,
-    confidencePercent: 92,
-    notes: [
-      'Boundary check completed. Operator provided certified weighbridge tare slips from harvest intake. Stock confirmed within acceptable variance.',
-    ],
-    createdAt: '2026-09-04T16:00:00Z',
-    resolvedAt: '2026-09-05T11:30:00Z',
-    resolutionType: 'stock_confirmed_physical',
-  }
 ];
 
 export interface StorageData {
   warehouses: Warehouse[];
   verifications: Verification[];
   reviews: ReviewItem[];
+  profile?: InspectorProfile | null;
+  govChecks?: GovCheck[];
+}
+
+/**
+ * Demo inspector identity, seeded in code.
+ *
+ * data/storage.json is gitignored, so a profile written there exists only on the
+ * machine that saved it — a deployed instance would still show the generic
+ * "Field Inspector". Seeding here means the demo identity is present on a fresh
+ * clone, on Vercel, and after a demo reset. Remove this before a real launch.
+ *
+ * No phone numbers: `contact` stays empty so the identity can never leak into a
+ * public verification record.
+ */
+export const DEMO_PROFILE: InspectorProfile = {
+  inspectorType: 'government',
+  displayName: 'Ramesh Patel',
+  bank: {
+    bankName: 'Nashik District Co-operative Bank',
+    employeeName: 'Sunita Desai',
+    employeeId: 'EMP-2291',
+    idCardDetails: 'Aadhaar ending 4417 · Maharashtra State Co-operative Credit Card',
+    contact: undefined,
+    email: 'sunita.desi@nashikdcb.in',
+    region: 'Nashik, Maharashtra',
+  },
+  gov: {
+    department: 'District Food & Civil Supplies Department, Nashik',
+    inspectorName: 'Ramesh Patel',
+    govId: 'GOV-NSK-0417',
+    designation: 'Senior Stock Inspector',
+    cardDetails: 'Government Photo ID ending 0417 · Divisional Supply Office, Nashik',
+    contact: undefined,
+    email: 'ramesh.patel@foodsup.nashik.gov.in',
+    region: 'Nashik, Maharashtra',
+  },
+};
+
+/**
+ * Merge a profile branch field-by-field.
+ *
+ * Both the Express route and the serverless function always send a bank and gov
+ * object, so a partial save arrives as a full object whose untouched fields are
+ * `undefined`. A plain `?? previous` on the whole branch would therefore discard
+ * the saved values, so undefined incoming fields must be dropped individually.
+ */
+export function mergeProfileBranch<T extends object>(prev: T | undefined, next: T | undefined): T | undefined {
+  if (!prev && !next) return undefined;
+  const defined = Object.entries(next || {}).filter(([, v]) => v !== undefined);
+  return { ...(prev || {}), ...Object.fromEntries(defined) } as T;
 }
 
 class StorageManager {
@@ -455,12 +265,14 @@ class StorageManager {
       warehouses: INITIAL_WAREHOUSES,
       verifications: INITIAL_VERIFICATIONS,
       reviews: INITIAL_REVIEWS,
+      profile: JSON.parse(JSON.stringify(DEMO_PROFILE)),
+      govChecks: [],
     };
     this.saveData(defaultData);
     return defaultData;
   }
 
-  /** Backfill season + media fields for records saved before season-aware calibration. */
+  /** Backfill season + media + agentType fields for records saved before agent-aware Inspector Panel. */
   private migrateLegacyData(parsed: StorageData): StorageData {
     let mutated = false;
     // Swap the expired soybean CDN photo for the verified replacement.
@@ -485,6 +297,12 @@ class StorageManager {
         vRec['mediaType'] = 'photo';
         mutated = true;
       }
+      // Single-store migration: legacy audits predate agent split, default to bank so
+      // Bank Checks keeps showing history and Dashboard counts stay correct.
+      if (!vRec['agentType']) {
+        vRec['agentType'] = 'bank';
+        mutated = true;
+      }
     }
     for (const r of parsed.reviews) {
       const rRec = r as unknown as Record<string, unknown>;
@@ -494,10 +312,68 @@ class StorageManager {
         mutated = true;
       }
     }
+    // Profile field added later — default to null without overwriting a saved profile.
+    if (!('profile' in parsed)) {
+      (parsed as StorageData).profile = null;
+      mutated = true;
+    }
+    // QR gov-checks must survive everything, including resets — never reseed them.
+    if (!Array.isArray((parsed as StorageData).govChecks)) {
+      (parsed as StorageData).govChecks = [];
+      mutated = true;
+    }
     if (mutated) {
       this.saveData(parsed);
     }
     return parsed;
+  }
+
+  public addGovCheck(record: GovCheck): GovCheck {
+    if (!Array.isArray(this.data.govChecks)) this.data.govChecks = [];
+    this.data.govChecks.unshift(record);
+    this.saveData(this.data);
+    return record;
+  }
+
+  public getGovCheckById(id: string): GovCheck | undefined {
+    return (this.data.govChecks || []).find((g) => g.id === id);
+  }
+
+  /** All QR records minted for one verification (newest first). */
+  public getGovChecksByVerification(verificationId: string): GovCheck[] {
+    return (this.data.govChecks || [])
+      .filter((g) => g.verificationId === verificationId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  /** Read-only history for official lookups — case-insensitive inspector-name match. */
+  public getGovChecksByOfficial(name: string): GovCheck[] {
+    const q = name.trim().toLowerCase();
+    return (this.data.govChecks || [])
+      .filter((g) => g.inspectorName.toLowerCase().includes(q))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  public getProfile(): InspectorProfile | null {
+    return this.data.profile || null;
+  }
+
+  public saveProfile(profile: InspectorProfile): InspectorProfile {
+    // Merge, do not replace. The bank and government branches are separate
+    // identities sharing one record, so saving one must never wipe the other.
+    const previous = this.data.profile || undefined;
+    const clean: InspectorProfile = {
+      inspectorType: profile.inspectorType === 'government' ? 'government' : 'bank',
+      displayName: typeof profile.displayName === 'string' && profile.displayName.trim()
+        ? profile.displayName.slice(0, 120)
+        : previous?.displayName,
+      bank: mergeProfileBranch(previous?.bank, profile.bank),
+      gov: mergeProfileBranch(previous?.gov, profile.gov),
+      updatedAt: new Date().toISOString(),
+    };
+    this.data.profile = clean;
+    this.saveData(this.data);
+    return clean;
   }
 
   private saveData(data: StorageData) {
@@ -525,13 +401,15 @@ class StorageManager {
     return this.data.warehouses[idx];
   }
 
-  public getVerifications(warehouseId?: string): Verification[] {
+  public getVerifications(warehouseId?: string, agentType?: string): Verification[] {
+    let list = [...this.data.verifications];
     if (warehouseId) {
-      return this.data.verifications
-        .filter(v => v.warehouseId === warehouseId)
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      list = list.filter(v => v.warehouseId === warehouseId);
     }
-    return [...this.data.verifications].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    if (agentType === 'bank' || agentType === 'government') {
+      list = list.filter(v => (v.agentType || 'bank') === agentType);
+    }
+    return list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
 
   /** Latest verification per warehouse — powers the console's declared-vs-estimated cards. */
@@ -659,10 +537,14 @@ class StorageManager {
   }
 
   public resetToDefaults() {
+    // QR gov-check records survive demo resets explicitly — they are permanent evidence.
+    const preserved = Array.isArray(this.data.govChecks) ? this.data.govChecks : [];
     this.data = {
       warehouses: INITIAL_WAREHOUSES,
       verifications: INITIAL_VERIFICATIONS,
       reviews: INITIAL_REVIEWS,
+      profile: this.data.profile || null,
+      govChecks: preserved,
     };
     this.saveData(this.data);
     return this.data;

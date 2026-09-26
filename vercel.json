@@ -5,6 +5,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/gov-checks/:id",
+      "destination": "/api/gov-checks?id=:id"
+    },
+    {
       "source": "/api/reviews/:id",
       "destination": "/api/reviews?id=:id"
     },

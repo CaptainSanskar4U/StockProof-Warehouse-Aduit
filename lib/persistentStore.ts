@@ -11,9 +11,13 @@ import {
   INITIAL_WAREHOUSES,
   INITIAL_VERIFICATIONS,
   INITIAL_REVIEWS,
+  DEMO_PROFILE,
+  mergeProfileBranch,
   type StorageData,
 } from '../server/store.js';
 import type {
+  GovCheck,
+  InspectorProfile,
   PortfolioSummary,
   ReviewItem,
   Verification,
@@ -24,6 +28,8 @@ const KEYS = {
   warehouses: 'stockproof:warehouses',
   verifications: 'stockproof:verifications',
   reviews: 'stockproof:reviews',
+  govChecks: 'stockproof:gov-checks',
+  profile: 'stockproof:profile',
 } as const;
 
 function redisConfigured(): boolean {
@@ -44,10 +50,15 @@ function getRedis(): Redis | null {
 
 function freshSeed(): StorageData {
   // JSON clone so callers can never mutate the seed constants.
+  // govChecks are permanent evidence: never seeded, never wiped.
+  // The demo inspector identity is seeded so a fresh clone or a cold-start
+  // serverless instance still has an inspector.
   return {
     warehouses: JSON.parse(JSON.stringify(INITIAL_WAREHOUSES)),
     verifications: JSON.parse(JSON.stringify(INITIAL_VERIFICATIONS)),
     reviews: JSON.parse(JSON.stringify(INITIAL_REVIEWS)),
+    profile: JSON.parse(JSON.stringify(DEMO_PROFILE)),
+    govChecks: [],
   };
 }
 
@@ -57,15 +68,20 @@ async function load(): Promise<StorageData> {
   const redis = getRedis();
   if (redis) {
     try {
-      const [warehouses, verifications, reviews] = await Promise.all([
+      const [warehouses, verifications, reviews, govChecks, profile] = await Promise.all([
         redis.get<Warehouse[]>(KEYS.warehouses),
         redis.get<Verification[]>(KEYS.verifications),
         redis.get<ReviewItem[]>(KEYS.reviews),
+        redis.get<GovCheck[]>(KEYS.govChecks),
+        redis.get<InspectorProfile>(KEYS.profile),
       ]);
       if (warehouses && verifications && reviews) {
-        return { warehouses, verifications, reviews };
+        return { warehouses, verifications, reviews, govChecks: govChecks || [], profile: profile || null };
       }
       const seed = freshSeed();
+      // Preserve any existing QR records across reseeds.
+      if (govChecks) seed.govChecks = govChecks;
+      if (profile) seed.profile = profile;
       await save(seed);
       return seed;
     } catch (err) {
@@ -73,6 +89,7 @@ async function load(): Promise<StorageData> {
     }
   }
   if (!mem) mem = freshSeed();
+  if (!Array.isArray(mem.govChecks)) mem.govChecks = [];
   return mem;
 }
 
@@ -84,6 +101,8 @@ async function save(data: StorageData): Promise<void> {
         redis.set(KEYS.warehouses, data.warehouses),
         redis.set(KEYS.verifications, data.verifications),
         redis.set(KEYS.reviews, data.reviews),
+        redis.set(KEYS.govChecks, data.govChecks || []),
+        redis.set(KEYS.profile, data.profile || null),
       ]);
       return;
     } catch (err) {
@@ -271,7 +290,68 @@ export async function getPortfolioSummary(): Promise<PortfolioSummary> {
 }
 
 export async function resetToDefaults(): Promise<PortfolioSummary> {
+  // QR gov-check records survive demo resets explicitly — permanent evidence.
+  // The inspector profile is likewise preserved, not reset to blank.
+  const current = await load();
+  const preserved = Array.isArray(current.govChecks) ? current.govChecks : [];
+  const preservedProfile = current.profile ?? JSON.parse(JSON.stringify(DEMO_PROFILE));
   const seed = freshSeed();
+  seed.govChecks = preserved;
+  seed.profile = preservedProfile;
   await save(seed);
   return getPortfolioSummary();
+}
+
+export async function getProfile(): Promise<InspectorProfile | null> {
+  const data = await load();
+  return data.profile || null;
+}
+
+/** Merge, do not replace: the bank and government branches are one record. */
+export async function saveProfile(profile: InspectorProfile): Promise<InspectorProfile> {
+  const data = await load();
+  const previous = data.profile || undefined;
+  const clean: InspectorProfile = {
+    inspectorType: profile.inspectorType === 'government' ? 'government' : 'bank',
+    displayName:
+      typeof profile.displayName === 'string' && profile.displayName.trim()
+        ? profile.displayName.slice(0, 120)
+        : previous?.displayName,
+    bank: mergeProfileBranch(previous?.bank, profile.bank),
+    gov: mergeProfileBranch(previous?.gov, profile.gov),
+    updatedAt: new Date().toISOString(),
+  };
+  data.profile = clean;
+  await save(data);
+  return clean;
+}
+
+export async function addGovCheck(record: GovCheck): Promise<GovCheck> {
+  const data = await load();
+  if (!Array.isArray(data.govChecks)) data.govChecks = [];
+  data.govChecks.unshift(record);
+  await save(data);
+  return record;
+}
+
+export async function getGovCheckById(id: string): Promise<GovCheck | undefined> {
+  const data = await load();
+  return (data.govChecks || []).find((g) => g.id === id);
+}
+
+/** All QR records minted for one verification (newest first). */
+export async function getGovChecksByVerification(verificationId: string): Promise<GovCheck[]> {
+  const data = await load();
+  return (data.govChecks || [])
+    .filter((g) => g.verificationId === verificationId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+/** Read-only history for official lookups — case-insensitive inspector-name match. */
+export async function getGovChecksByOfficial(name: string): Promise<GovCheck[]> {
+  const data = await load();
+  const q = name.trim().toLowerCase();
+  return (data.govChecks || [])
+    .filter((g) => g.inspectorName.toLowerCase().includes(q))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }

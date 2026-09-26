@@ -69,6 +69,60 @@ export interface Warehouse {
   pilePhotoUrl?: string;
 }
 
+export type AgentType = 'bank' | 'government';
+
+export type GovScheme = 'Public Distribution System' | 'Buffer Stock' | 'Other';
+
+export interface BankAuditFields {
+  farmerName?: string;
+  loanRef?: string;
+  warehouseName?: string;
+}
+
+export interface GovAuditFields {
+  warehouseRef?: string;
+  region?: string;
+  scheme?: GovScheme;
+}
+
+export interface PhotoVerdictFinding {
+  label: string;
+  probability_ai: number;
+  probability_real: number;
+  confidence: number;
+  raw_score: number;
+  backend: string;
+  filename?: string;
+}
+
+/** Photo-authenticity verdict, stored explicitly — never merged into match. */
+export type PhotoAuthenticity = 'real' | 'ai' | 'inconclusive' | 'unchecked';
+
+/**
+ * Server-stored QR record. The QR points here — never to a file.
+ * match: boolean | null, where null = UNVERIFIED.
+ * No phone numbers, ever.
+ */
+export interface GovCheck {
+  id: string;
+  createdAt: string;
+  inspectorName: string;
+  location: string;
+  storageName?: string;
+  declaredTonnes: number;
+  estCentral: number;
+  estLow: number;
+  estHigh: number;
+  volumeM3: number;
+  match: boolean | null;
+  authenticity: PhotoAuthenticity;
+  checkerNote?: string;
+  photoDataUrl?: string;
+  verificationId?: string;
+  agentType?: AgentType;
+  scheme?: GovScheme;
+}
+
 export interface Verification {
   id: string;
   warehouseId: string;
@@ -78,6 +132,13 @@ export interface Verification {
   referenceScale?: string;
   receiptPhotoUrl?: string;
   declaredSource?: 'registry' | 'manual';
+  agentType?: AgentType;
+  bank?: BankAuditFields;
+  gov?: GovAuditFields;
+  photoVerdict?: {
+    primary?: PhotoVerdictFinding | null;
+    cross?: PhotoVerdictFinding | null;
+  };
   geometry: GeometryInputs;
   context: ContextInputs;
   estimate: {
@@ -142,4 +203,41 @@ export interface UserProfile {
   designation: string;
   organization: string;
   badge: string;
+}
+
+export type InspectorType = 'bank' | 'government';
+
+export interface InspectorBankProfile {
+  bankName?: string;
+  employeeName?: string;
+  employeeId?: string;
+  idCardDetails?: string;
+  contact?: string;
+  email?: string;
+  region?: string;
+  photoDataUrl?: string;
+  documentDataUrl?: string;
+  documentName?: string;
+}
+
+export interface InspectorGovProfile {
+  department?: string;
+  inspectorName?: string;
+  govId?: string;
+  designation?: string;
+  cardDetails?: string;
+  contact?: string;
+  email?: string;
+  region?: string;
+  photoDataUrl?: string;
+  documentDataUrl?: string;
+  documentName?: string;
+}
+
+export interface InspectorProfile {
+  inspectorType: InspectorType;
+  displayName?: string;
+  bank?: InspectorBankProfile;
+  gov?: InspectorGovProfile;
+  updatedAt?: string;
 }

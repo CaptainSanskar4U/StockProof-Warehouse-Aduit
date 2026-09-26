@@ -4,44 +4,50 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Warehouse, 
-  Verification, 
-  ReviewItem, 
-  PortfolioSummary, 
-  UserRole 
+import {
+  Warehouse,
+  Verification,
+  ReviewItem,
+  PortfolioSummary
 } from './types.js';
-import { 
-  fetchWarehouses, 
-  fetchReviews, 
-  fetchPortfolioSummary, 
-  updateReviewItem, 
-  resetDemoData 
+import {
+  fetchWarehouses,
+  fetchReviews,
+  fetchPortfolioSummary,
+  fetchInspectorProfile
 } from './services/api.js';
-import { Header, USERS } from './components/Header.js';
+import { InspectorProfile } from './types.js';
+import { Header, HeaderView } from './components/Header.js';
+import { VerificationModal } from './components/VerificationModal.js';
+import { ReportPrintView } from './components/ReportPrintView.js';
+import { useTheme } from './hooks/useTheme.js';
 import { OfflineBanner } from './components/OfflineBanner.js';
 import { DashboardView } from './components/DashboardView.js';
+import { ProfileTab } from './components/ProfileTab.js';
 import { WarehouseDetailModal } from './components/WarehouseDetailModal.js';
 import { VerificationFlow } from './components/VerificationFlow.js';
-import { ReviewQueueView } from './components/ReviewQueueView.js';
+import { AuditRecordsTab } from './components/AuditRecordsTab.js';
+import { RecordDetailModal } from './components/RecordDetailModal.js';
 import { ReportExportModal } from './components/ReportExportModal.js';
 import { PhysicsModal } from './components/PhysicsModal.js';
 import { LandingPageView } from './components/LandingPageView.js';
 import { CheckCircle2, AlertOctagon, Info } from 'lucide-react';
 
 export default function App() {
-  // Navigation & Role state
-  const [currentRole, setCurrentRole] = useState<UserRole>('auditor');
-  const [currentView, setCurrentView] = useState<'overview' | 'dashboard' | 'reviews' | 'reports'>('overview');
+  // Navigation state (single inspector identity comes from the saved Profile)
+  const [currentView, setCurrentView] = useState<HeaderView>('overview');
 
   // Data state
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [inspectorProfile, setInspectorProfile] = useState<InspectorProfile | null>(null);
+  const { theme, toggleTheme } = useTheme();
 
   // Modals & Active Flows
   const [selectedWarehouseForDetail, setSelectedWarehouseForDetail] = useState<Warehouse | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<Verification | null>(null);
   const [activeVerificationWarehouse, setActiveVerificationWarehouse] = useState<Warehouse | null>(null);
   const [isPhysicsModalOpen, setIsPhysicsModalOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
@@ -87,7 +93,19 @@ export default function App() {
 
   useEffect(() => {
     loadAllData();
+    fetchInspectorProfile().then(setInspectorProfile).catch(() => setInspectorProfile(null));
   }, [loadAllData]);
+
+  // Saved profile reused as the auditor identity on new audits and reports.
+  // No role switcher: without a saved profile, audits sign generically.
+  const baseAuditor = { id: 'inspector', name: 'Field Inspector', role: 'field_inspector' };
+  const profileName = inspectorProfile?.displayName
+    || (inspectorProfile?.inspectorType === 'government' ? inspectorProfile?.gov?.inspectorName : inspectorProfile?.bank?.employeeName)
+    || '';
+  const profileId = inspectorProfile?.inspectorType === 'government' ? inspectorProfile?.gov?.govId : inspectorProfile?.bank?.employeeId;
+  const currentAuditor = profileName
+    ? { ...baseAuditor, name: profileName, role: profileId ? `field_inspector · ${profileId}` : baseAuditor.role }
+    : baseAuditor;
 
   // Handle verification completion
   const handleVerificationCompleted = async (verification: Verification) => {
@@ -110,28 +128,6 @@ export default function App() {
     await loadAllData();
   };
 
-  // Handle review item updates (Resolve / Escalate / Add note)
-  const handleUpdateReview = async (id: string, payload: any) => {
-    try {
-      await updateReviewItem(id, payload);
-      showToast('Review action logged and updated successfully.', 'success');
-      await loadAllData();
-    } catch (err: any) {
-      showToast(err.message || 'Failed to update review item', 'urgent');
-    }
-  };
-
-  // Handle reset demo data
-  const handleResetDemo = async () => {
-    try {
-      await resetDemoData();
-      showToast('Demo data successfully reset to initial seed state.', 'info');
-      await loadAllData();
-    } catch (err: any) {
-      showToast('Error resetting demo data', 'urgent');
-    }
-  };
-
   // Handle offline toggle
   const handleToggleOffline = () => {
     setIsSimulatedOffline((prev) => {
@@ -148,19 +144,84 @@ export default function App() {
   const openReviewCount = reviews.filter((r) => r.status === 'open').length;
   const isLanding = !activeVerificationWarehouse && currentView === 'overview';
 
+  // Public verify links (?verify=<gc-id>) open a popup OVER the existing app —
+  // anonymous, no login, and no separate verification page.
+  const [verifyId, setVerifyId] = useState<string | null>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('verify');
+    } catch {
+      return null;
+    }
+  });
+
+  // Scanning a QR should land on the working panel, never the marketing landing.
+  useEffect(() => {
+    if (verifyId) setCurrentView('dashboard');
+  }, [verifyId]);
+
+  const closeVerification = useCallback(() => {
+    setVerifyId(null);
+    // Drop the param so a refresh does not re-open the popup.
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('verify');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    } catch {
+      /* history is unavailable — the popup still closes */
+    }
+  }, []);
+
+  // ?report=<verificationId> renders the printable official report and owns the
+  // whole page. Unlike ?verify= (which must live inside the app as a popup), a
+  // print document legitimately takes over the viewport.
+  const [reportId, setReportId] = useState<string | null>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('report');
+    } catch {
+      return null;
+    }
+  });
+
+  const closeReport = useCallback(() => {
+    setReportId(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('report');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Console-only theming: the marketing landing keeps its designed light look.
+  useEffect(() => {
+    if (isLanding) {
+      document.body.classList.remove('dark-mode');
+      document.body.classList.add('light-mode');
+      document.body.dataset.forcedTheme = 'landing';
+      document.documentElement.style.colorScheme = 'light';
+    } else if (document.body.dataset.forcedTheme === 'landing') {
+      delete document.body.dataset.forcedTheme;
+      document.body.classList.remove('light-mode', 'dark-mode');
+      document.body.classList.add(`${theme}-mode`);
+      document.documentElement.style.colorScheme = theme;
+    }
+  }, [isLanding, theme]);
+
+  if (reportId) {
+    return <ReportPrintView verificationId={reportId} onExit={closeReport} />;
+  }
+
   return (
-    <div className={isLanding ? 'min-h-screen bg-white text-[#2B2016] flex flex-col font-sans' : 'min-h-screen bg-[#FAF8F3] text-[#2B2016] flex flex-col font-sans'}>
+    <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)] flex flex-col font-sans">
       {/* Top Header with Golden Rule, Role Switcher, and Nav — hidden on marketing landing */}
       {!isLanding && (
       <>
       <Header
-        currentRole={currentRole}
-        onSelectRole={(role) => {
-          setCurrentRole(role);
-          showToast(`Switched persona to ${USERS[role].name} (${USERS[role].badge})`, 'info');
-        }}
         openReviewCount={openReviewCount}
         currentView={currentView}
+        theme={theme}
+        onToggleTheme={toggleTheme}
         onNavigate={(view) => {
           // Leave any open verification flow first — otherwise the flow
           // keeps rendering on top and the navbar looks dead.
@@ -175,7 +236,6 @@ export default function App() {
           });
         }}
         onOpenPhysics={() => setIsPhysicsModalOpen(true)}
-        onResetDemo={handleResetDemo}
       />
 
       {/* Realistic Field Connectivity / Offline Banner */}
@@ -196,7 +256,7 @@ export default function App() {
               warehouse={activeVerificationWarehouse}
               onCancel={() => setActiveVerificationWarehouse(null)}
               onComplete={handleVerificationCompleted}
-              currentAuditor={USERS[currentRole]}
+              currentAuditor={currentAuditor}
             />
           </div>
         ) : currentView === 'overview' ? (
@@ -215,20 +275,26 @@ export default function App() {
             onOpenReports={() => setIsReportModalOpen(true)}
           />
         ) : currentView === 'reviews' ? (
-          <ReviewQueueView
-            reviews={reviews}
-            onUpdateReview={handleUpdateReview}
-            onSelectWarehouse={(warehouseId) => {
-              const wh = warehouses.find((w) => w.id === warehouseId);
-              if (wh) setSelectedWarehouseForDetail(wh);
-            }}
-          />
+          <div className="max-w-5xl mx-auto">
+            <AuditRecordsTab
+              agentType="bank"
+              onOpenRecord={(v) => setSelectedRecord(v)}
+            />
+          </div>
+        ) : currentView === 'profile' ? (
+          <div className="max-w-5xl mx-auto">
+            <ProfileTab
+              onProfileSaved={(p) => {
+                setInspectorProfile(p);
+                showToast('Profile saved and applied across the panel.', 'success');
+              }}
+            />
+          </div>
         ) : (
           <DashboardView
             warehouses={warehouses}
             summary={summary}
-            currentRole={currentRole}
-            currentAuditor={USERS[currentRole]}
+            currentAuditor={currentAuditor}
             onSelectWarehouse={(warehouse) => setSelectedWarehouseForDetail(warehouse)}
             onStartVerification={(warehouse) => setActiveVerificationWarehouse(warehouse)}
             onOpenReport={() => setIsReportModalOpen(true)}
@@ -250,6 +316,20 @@ export default function App() {
         }}
       />
 
+      {/* Recorded reading detail */}
+      {selectedRecord && (
+        <RecordDetailModal
+          record={selectedRecord}
+          warehouse={warehouses.find((w) => w.id === selectedRecord.warehouseId)}
+          onClose={() => setSelectedRecord(null)}
+        />
+      )}
+
+      {/* Public QR verification popup — opens over the app, never replaces it */}
+      {verifyId && (
+        <VerificationModal id={verifyId} onClose={closeVerification} />
+      )}
+
       {/* Agronomic Physics & Defensible Formula Modal */}
       <PhysicsModal
         isOpen={isPhysicsModalOpen}
@@ -268,20 +348,20 @@ export default function App() {
       {notification && (
         <div className="safe-bottom fixed bottom-5 left-4 right-4 sm:left-auto sm:right-5 sm:max-w-md z-50 animate-fade-in">
           <div
-            className={`p-3.5 rounded-xl border text-xs font-mono shadow-[0_12px_32px_rgba(0,0,0,0.12)] flex items-start gap-3 bg-white ${
+            className={`p-3.5 rounded-xl border text-xs font-mono shadow-[var(--sheet-shadow)] flex items-start gap-3 bg-[var(--sheet)] ${
               notification.type === 'urgent'
-                ? 'border-l-4 border-l-[#B5574F] border-[#B5574F]/30 text-[#3D3226]'
+                ? 'border-l-4 border-l-[var(--danger)] border-[var(--hairline-strong)] text-[var(--ink-2)]'
                 : notification.type === 'success'
-                ? 'border-l-4 border-l-emerald-500 border-emerald-200 text-[#3D3226]'
-                : 'border-l-4 border-l-[#B98A2E] border-[#B98A2E]/30 text-[#3D3226]'
+                ? 'border-l-4 border-l-[var(--moss)] border-[var(--success-line)] text-[var(--ink-2)]'
+                : 'border-l-4 border-l-[var(--gold)] border-[var(--gold-line)] text-[var(--ink-2)]'
             }`}
           >
             {notification.type === 'urgent' ? (
-              <AlertOctagon className="w-4 h-4 shrink-0 text-[#B5574F] mt-0.5" />
+              <AlertOctagon className="w-4 h-4 shrink-0 text-[var(--danger)] mt-0.5" />
             ) : notification.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-[var(--success-ink)] mt-0.5" />
             ) : (
-              <Info className="w-4 h-4 shrink-0 text-[#B98A2E] mt-0.5" />
+              <Info className="w-4 h-4 shrink-0 text-[var(--gold)] mt-0.5" />
             )}
             <div className="flex-1 leading-relaxed">
               {notification.message}

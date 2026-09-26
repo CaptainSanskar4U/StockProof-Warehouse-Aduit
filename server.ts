@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { store, SAMPLE_GRAIN_IMAGES } from './server/store.js';
 import {
@@ -30,6 +31,69 @@ async function startServer() {
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString(), app: 'STOCKPROOF' });
+  });
+
+  // Inspector profile (persisted, reused across audits/reports)
+  app.get('/api/inspector-profile', (req, res) => {
+    try {
+      res.json(store.getProfile() || null);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/inspector-profile', (req, res) => {
+    try {
+      const body = (req.body || {}) as Record<string, unknown>;
+      const inspectorType = body['inspectorType'] === 'government' ? 'government' : 'bank';
+      const str = (v: unknown, max = 160): string | undefined => {
+        if (typeof v !== 'string') return undefined;
+        const t = v.trim();
+        return t ? t.slice(0, max) : undefined;
+      };
+      const dataUrl = (v: unknown): string | undefined => {
+        if (typeof v !== 'string' || !v.startsWith('data:')) return undefined;
+        // Cap uploads (~2MB) so storage.json stays small.
+        if (v.length > 2_800_000) return undefined;
+        return v;
+      };
+      const bankRaw = (body['bank'] || {}) as Record<string, unknown>;
+      const govRaw = (body['gov'] || {}) as Record<string, unknown>;
+      // Both branches are always sent. The store merges them, so switching the
+      // inspector type never erases the other identity.
+      const saved = store.saveProfile({
+        inspectorType,
+        displayName: str(body['displayName'], 120),
+        bank: {
+          bankName: str(bankRaw['bankName']),
+          employeeName: str(bankRaw['employeeName']),
+          employeeId: str(bankRaw['employeeId'], 80),
+          idCardDetails: str(bankRaw['idCardDetails'], 300),
+          contact: str(bankRaw['contact'], 80),
+          email: str(bankRaw['email'], 120),
+          region: str(bankRaw['region']),
+          photoDataUrl: dataUrl(bankRaw['photoDataUrl']),
+          documentDataUrl: dataUrl(bankRaw['documentDataUrl']),
+          documentName: str(bankRaw['documentName'], 160),
+        },
+        gov: {
+          department: str(govRaw['department']),
+          inspectorName: str(govRaw['inspectorName']),
+          govId: str(govRaw['govId'], 80),
+          designation: str(govRaw['designation']),
+          cardDetails: str(govRaw['cardDetails'], 300),
+          contact: str(govRaw['contact'], 80),
+          email: str(govRaw['email'], 120),
+          region: str(govRaw['region']),
+          photoDataUrl: dataUrl(govRaw['photoDataUrl']),
+          documentDataUrl: dataUrl(govRaw['documentDataUrl']),
+          documentName: str(govRaw['documentName'], 160),
+        },
+      });
+      res.json(saved);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   // --- AI image detection ---
@@ -201,11 +265,15 @@ async function startServer() {
     }
   });
 
-  // Get verifications (all or filtered by warehouse)
+  // Get verifications (all or filtered by warehouse / agentType).
+  // ONE store, filtered views: Bank Checks => ?agentType=bank, Government Audit => ?agentType=government.
   app.get('/api/verifications', (req, res) => {
     try {
-      const { warehouseId } = req.query;
-      const verifications = store.getVerifications(warehouseId as string | undefined);
+      const { warehouseId, agentType } = req.query;
+      const verifications = store.getVerifications(
+        warehouseId as string | undefined,
+        agentType as string | undefined
+      );
       res.json(verifications);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -240,7 +308,7 @@ async function startServer() {
     }
   });
 
-  // Create and commit a new verification run
+  // Create and commit a new verification run (Inspector Panel: single engine, agentType only changes context/storage/wording)
   app.post('/api/verifications', (req, res) => {
     try {
       const {
@@ -254,6 +322,10 @@ async function startServer() {
         context,
         declaredTonnes,
         runBy,
+        agentType,
+        bank,
+        gov,
+        photoVerdict,
       } = req.body;
 
       if (!warehouseId || !geometry || !context) {
@@ -278,6 +350,23 @@ async function startServer() {
         finalDeclared
       );
 
+      const safeAgentType = agentType === 'government' ? 'government' : 'bank';
+      const cleanFinding = (f: unknown) => {
+        if (!f || typeof f !== 'object') return null;
+        const r = f as Record<string, unknown>;
+        if (typeof r.label !== 'string' || typeof r.probability_ai !== 'number') return null;
+        const num = (v: unknown, fb: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fb);
+        return {
+          label: r.label.slice(0, 24),
+          probability_ai: num(r.probability_ai, 0),
+          probability_real: num(r.probability_real, 1 - num(r.probability_ai, 0)),
+          confidence: num(r.confidence, 0.5),
+          raw_score: num(r.raw_score, 0),
+          backend: typeof r.backend === 'string' ? r.backend.slice(0, 80) : 'unknown',
+          filename: typeof r.filename === 'string' ? r.filename.slice(0, 160) : undefined,
+        };
+      };
+      const verdictRaw = (photoVerdict || {}) as Record<string, unknown>;
       const newVerification: Verification = {
         id: `ver-${Date.now().toString().slice(-6)}`,
         warehouseId,
@@ -287,6 +376,17 @@ async function startServer() {
         referenceScale: typeof referenceScale === 'string' ? referenceScale : undefined,
         receiptPhotoUrl: typeof receiptPhotoUrl === 'string' && receiptPhotoUrl.length > 0 ? receiptPhotoUrl : undefined,
         declaredSource: declaredSource === 'manual' ? 'manual' : 'registry',
+        agentType: safeAgentType,
+        bank: safeAgentType === 'bank' && bank && typeof bank === 'object' ? {
+          farmerName: typeof bank.farmerName === 'string' ? bank.farmerName.slice(0, 120) : undefined,
+          loanRef: typeof bank.loanRef === 'string' ? bank.loanRef.slice(0, 120) : undefined,
+          warehouseName: typeof bank.warehouseName === 'string' ? bank.warehouseName.slice(0, 160) : undefined,
+        } : undefined,
+        gov: safeAgentType === 'government' && gov && typeof gov === 'object' ? {
+          warehouseRef: typeof gov.warehouseRef === 'string' ? gov.warehouseRef.slice(0, 160) : undefined,
+          region: typeof gov.region === 'string' ? gov.region.slice(0, 160) : undefined,
+          scheme: gov.scheme === 'Public Distribution System' || gov.scheme === 'Buffer Stock' || gov.scheme === 'Other' ? gov.scheme : undefined,
+        } : undefined,
         geometry: {
           ...geometry,
           calculatedVolumeM3: Number(calculatedVolume.toFixed(1)),
@@ -305,10 +405,14 @@ async function startServer() {
         status: estimateResult.status,
         explanatoryReason: estimateResult.explanatoryReason,
         auditRecommendation: estimateResult.auditRecommendation,
+        photoVerdict: {
+          primary: cleanFinding(verdictRaw.primary),
+          cross: cleanFinding(verdictRaw.cross),
+        },
         runBy: runBy || {
-          id: 'aud-01',
-          name: 'Priya Sharma',
-          role: 'Senior Field Auditor (North Zone)',
+          id: 'inspector',
+          name: 'Field Inspector',
+          role: 'field_inspector',
         },
       };
 
@@ -317,6 +421,119 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error adding verification:', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- QR gov-check records (permanent evidence; the QR points here, never to a file) ---
+  function deriveAuthenticity(photoVerdict: unknown): 'real' | 'ai' | 'inconclusive' | 'unchecked' {
+    try {
+      const pv = (photoVerdict || {}) as Record<string, { label?: unknown } | null | undefined>;
+      const labels = [pv.primary?.label, pv.cross?.label].filter((l): l is string => typeof l === 'string');
+      if (labels.length === 0) return 'unchecked';
+      if (labels.some((l) => l === 'ai')) return 'ai';
+      if (labels.every((l) => l === 'real')) return 'real';
+      return 'inconclusive';
+    } catch {
+      return 'unchecked';
+    }
+  }
+
+  // Create a permanent QR record. Namespaced away from the audit registry on purpose.
+  app.post('/api/gov-checks', (req, res) => {
+    try {
+      const body = (req.body || {}) as Record<string, unknown>;
+      const str = (v: unknown, max = 160): string | undefined => {
+        if (typeof v !== 'string') return undefined;
+        const t = v.trim();
+        return t ? t.slice(0, max) : undefined;
+      };
+      const num = (v: unknown): number | undefined =>
+        typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+
+      const inspectorName = str(body['inspectorName'], 120);
+      const location = str(body['location'], 200);
+      const declaredTonnes = num(body['declaredTonnes']);
+      const estCentral = num(body['estCentral']);
+      const estLow = num(body['estLow']);
+      const estHigh = num(body['estHigh']);
+      const volumeM3 = num(body['volumeM3']);
+
+      if (!inspectorName || !location || declaredTonnes === undefined ||
+          estCentral === undefined || estLow === undefined ||
+          estHigh === undefined || volumeM3 === undefined) {
+        return res.status(400).json({
+          error: 'inspectorName, location, declaredTonnes, estCentral, estLow, estHigh, volumeM3 are required',
+        });
+      }
+
+      const authenticity = deriveAuthenticity(body['photoVerdict']);
+      const statusRaw = typeof body['status'] === 'string' ? body['status'] : '';
+      // match: boolean | null — null = UNVERIFIED, never merged into false.
+      const match = (authenticity === 'ai' || authenticity === 'inconclusive')
+        ? null
+        : statusRaw === 'consistent';
+
+      let id = '';
+      for (let i = 0; i < 5; i += 1) {
+        const candidate = `gc-${crypto.randomBytes(4).toString('hex')}`;
+        if (!store.getGovCheckById(candidate)) {
+          id = candidate;
+          break;
+        }
+      }
+      if (!id) return res.status(500).json({ error: 'Could not mint a unique record id' });
+
+      const photo = typeof body['photoDataUrl'] === 'string' ? body['photoDataUrl'] : undefined;
+      const record = store.addGovCheck({
+        id,
+        createdAt: new Date().toISOString(),
+        inspectorName,
+        location,
+        storageName: str(body['storageName'], 160),
+        declaredTonnes,
+        estCentral,
+        estLow,
+        estHigh,
+        volumeM3,
+        match,
+        authenticity,
+        checkerNote: str(body['checkerNote'], 600),
+        photoDataUrl: photo && photo.startsWith('data:') && photo.length <= 2_800_000 ? photo : undefined,
+        verificationId: str(body['verificationId'], 40),
+        agentType: body['agentType'] === 'government' ? 'government' : 'bank',
+        scheme: body['scheme'] === 'Public Distribution System' || body['scheme'] === 'Buffer Stock' || body['scheme'] === 'Other'
+          ? body['scheme'] : undefined,
+      });
+      res.status(201).json(record);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Read one stored record (public verify page reads this — no stack traces).
+  app.get('/api/gov-checks/:id', (req, res) => {
+    try {
+      const record = store.getGovCheckById(req.params.id);
+      if (!record) return res.status(404).json({ error: 'Record not found' });
+      res.json(record);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Read failed' });
+    }
+  });
+
+  // Filtered lookups only — official history or one verification's record. Never a full feed.
+  app.get('/api/gov-checks', (req, res) => {
+    try {
+      const { official, verificationId } = req.query;
+      if (typeof verificationId === 'string' && verificationId.trim()) {
+        return res.json(store.getGovChecksByVerification(verificationId.trim()));
+      }
+      if (typeof official !== 'string' || !official.trim()) {
+        return res.status(400).json({ error: 'official or verificationId query parameter is required' });
+      }
+      res.json(store.getGovChecksByOfficial(official));
+    } catch (err: any) {
+      res.status(500).json({ error: 'Read failed' });
     }
   });
 

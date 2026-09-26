@@ -20,61 +20,61 @@ export const StatusChip: React.FC<StatusChipProps> = ({
   switch (status) {
     case 'consistent':
       label = 'CONSISTENT';
-      colorClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+      colorClass = 'bg-[var(--success-bg)] text-[var(--success-ink)] border-[var(--success-line)]';
       IconComponent = CheckCircle2;
       break;
 
     case 'review':
       label = 'REVIEW REQUIRED';
-      colorClass = 'bg-[#B98A2E]/10 text-[#7A5A1A] border-[#B98A2E]/30';
+      colorClass = 'bg-[var(--gold-wash)] text-[var(--gold-ink)] border-[var(--gold-line)]';
       IconComponent = AlertTriangle;
       break;
 
     case 'high_priority':
       label = 'HIGH PRIORITY';
-      colorClass = 'bg-red-50 text-red-800 border-red-200';
+      colorClass = 'bg-[var(--danger-bg)] text-[var(--danger-ink)] border-[var(--danger-line)]';
       IconComponent = AlertOctagon;
       break;
 
     case 'urgent':
       label = 'URGENT REVIEW';
-      colorClass = 'bg-red-50 text-red-800 border-red-300';
+      colorClass = 'bg-[var(--danger-bg)] text-[var(--danger-ink)] border-[var(--danger-line)]';
       IconComponent = AlertOctagon;
       break;
 
     case 'medium':
       label = 'MEDIUM PRIORITY';
-      colorClass = 'bg-[#B98A2E]/10 text-[#7A5A1A] border-[#B98A2E]/30';
+      colorClass = 'bg-[var(--gold-wash)] text-[var(--gold-ink)] border-[var(--gold-line)]';
       IconComponent = AlertTriangle;
       break;
 
     case 'routine':
       label = 'ROUTINE';
-      colorClass = 'bg-stone-100 text-stone-600 border-stone-200';
+      colorClass = 'bg-[var(--wash)] text-[var(--ink-soft)] border-[var(--hairline)]';
       IconComponent = Clock;
       break;
 
     case 'open':
       label = 'OPEN ACTION';
-      colorClass = 'bg-[#B98A2E]/10 text-[#7A5A1A] border-[#B98A2E]/30';
+      colorClass = 'bg-[var(--gold-wash)] text-[var(--gold-ink)] border-[var(--gold-line)]';
       IconComponent = Clock;
       break;
 
     case 'resolved':
       label = 'RESOLVED';
-      colorClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+      colorClass = 'bg-[var(--success-bg)] text-[var(--success-ink)] border-[var(--success-line)]';
       IconComponent = Check;
       break;
 
     case 'escalated':
       label = 'ESCALATED TO RISK COMM.';
-      colorClass = 'bg-red-50 text-red-800 border-red-300';
+      colorClass = 'bg-[var(--danger-bg)] text-[var(--danger-ink)] border-[var(--danger-line)]';
       IconComponent = AlertOctagon;
       break;
 
     default:
       label = String(status).toUpperCase();
-      colorClass = 'bg-stone-100 text-stone-600 border-stone-200';
+      colorClass = 'bg-[var(--wash)] text-[var(--ink-soft)] border-[var(--hairline)]';
       IconComponent = Clock;
   }
 

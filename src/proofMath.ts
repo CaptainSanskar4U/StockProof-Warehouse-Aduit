@@ -11,6 +11,13 @@ import { getSeasonProfile, getSeasonAirFactor } from './seasonProfiles.js';
 export const REPOSE_MIN_DEG = 27;
 export const REPOSE_MAX_DEG = 34;
 
+/**
+ * Single global verdict tolerance for Inspector Panel reports.
+ * Declared outside range by <= tolerance => review, > tolerance => high_priority.
+ * Same value for Bank and Government audits — change here to retune project-wide.
+ */
+export const VERDICT_TOLERANCE_PCT = 0.05;
+
 export interface ProofContext {
   grainType: GrainType;
   season: Season;
