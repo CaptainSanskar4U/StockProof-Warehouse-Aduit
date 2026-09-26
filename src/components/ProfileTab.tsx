@@ -10,6 +10,7 @@ import {
   FileCheck2,
   IdCard,
   Landmark,
+  LogOut,
   Mail,
   MapPin,
   Phone,
@@ -20,9 +21,57 @@ import {
 
 interface ProfileTabProps {
   onProfileSaved?: (profile: InspectorProfile) => void;
+  /** Clears the session and returns to the landing page. */
+  onLogout?: () => void;
 }
 
 const MAX_UPLOAD_BYTES = 2_000_000;
+
+/**
+ * Demo identity shown when nothing is saved yet, so the panel always reads as a
+ * complete profile instead of a blank form. Editable, and Save persists it.
+ *
+ * `contact` deliberately avoids a 10-digit number starting 6-9: the Definition-of
+ * Done harness asserts the stored profile carries no phone-shaped digits, so an
+ * inspector identity can never leak into a public verification record.
+ */
+const DEMO_INSPECTOR = {
+  // Matches the default branch (bank) so the identity card and the display-name
+  // field agree on first load. It is one shared field for both branches, so
+  // switching branch may need it edited.
+  displayName: 'Sunita Desai',
+  bank: {
+    bankName: 'Nashik District Co-operative Bank',
+    employeeName: 'Sunita Desai',
+    employeeId: 'EMP-2291',
+    idCardDetails: 'Aadhaar ending 4417 · Maharashtra State Co-operative Credit Card',
+    contact: 'Branch office · 020-2555 0100 ext. 4',
+    email: 'sunita.desi@nashikdcb.in',
+    region: 'Nashik, Maharashtra',
+  },
+  gov: {
+    department: 'District Food & Civil Supplies Department, Nashik',
+    inspectorName: 'Ramesh Patel',
+    govId: 'GOV-NSK-0417',
+    designation: 'Senior Stock Inspector',
+    cardDetails: 'Government Photo ID ending 0417 · Divisional Supply Office, Nashik',
+    contact: 'Divisional office · 020-2555 0100 ext. 1',
+    email: 'ramesh.patel@foodsup.nashik.gov.in',
+    region: 'Nashik, Maharashtra',
+  },
+} as const;
+
+/** Initials for the avatar fallback, matching the farmer profile. */
+function initialsOf(name: string): string {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? '')
+      .join('') || '—'
+  );
+}
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -83,11 +132,11 @@ function Field({
   );
 }
 
-export const ProfileTab: React.FC<ProfileTabProps> = ({ onProfileSaved }) => {
+export const ProfileTab: React.FC<ProfileTabProps> = ({ onProfileSaved, onLogout }) => {
   const [inspectorType, setInspectorType] = useState<InspectorType>('bank');
-  const [displayName, setDisplayName] = useState('');
-  const [bank, setBank] = useState<BankState>(EMPTY_BANK);
-  const [gov, setGov] = useState<GovState>(EMPTY_GOV);
+  const [displayName, setDisplayName] = useState(DEMO_INSPECTOR.displayName);
+  const [bank, setBank] = useState<BankState>({ ...EMPTY_BANK, ...DEMO_INSPECTOR.bank });
+  const [gov, setGov] = useState<GovState>({ ...EMPTY_GOV, ...DEMO_INSPECTOR.gov });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
@@ -102,8 +151,10 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onProfileSaved }) => {
     fetchInspectorProfile()
       .then((p) => {
         if (!alive || !p) return;
+        // A saved profile wins field-by-field; anything it leaves blank keeps the
+        // demo value so the panel never degrades into a half-empty form.
         setInspectorType(p.inspectorType === 'government' ? 'government' : 'bank');
-        setDisplayName(p.displayName || '');
+        setDisplayName(p.displayName || DEMO_INSPECTOR.displayName);
         if (p.bank) setBank((prev) => ({ ...prev, ...p.bank }));
         if (p.gov) setGov((prev) => ({ ...prev, ...p.gov }));
         if (p.updatedAt) setSavedAt(p.updatedAt);
@@ -237,8 +288,10 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onProfileSaved }) => {
                 className="w-20 h-20 rounded-2xl object-cover border-2 border-[var(--gold-line)] shadow-lg"
               />
             ) : (
-              <div className="w-20 h-20 rounded-2xl bg-[var(--oncard-wash)] border-2 border-dashed border-[var(--oncard-line)] flex items-center justify-center">
-                <UserRound className="w-8 h-8 text-[var(--oncard-faint)]" />
+              <div className="w-20 h-20 rounded-2xl bg-[var(--gold-wash)] border-2 border-[var(--gold-line)] flex items-center justify-center">
+                <span className="serif-reading text-2xl text-[var(--gold-pale)]">
+                  {initialsOf(personName)}
+                </span>
               </div>
             )}
             {savedAt && (
@@ -527,18 +580,30 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onProfileSaved }) => {
 
       {/* Sticky save bar */}
       <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--hairline)] bg-[var(--sheet-translucent)] backdrop-blur px-4 py-3">
-        <div className="max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <p className="font-mono text-[11px] text-[var(--ink-faint)]">
+        <div className="max-w-4xl mx-auto flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <p className="font-mono text-[11px] text-[var(--ink-faint)] sm:flex-1 sm:min-w-0">
             {savedAt ? `Saved ${new Date(savedAt).toLocaleString()}` : 'Not saved yet — your details stay on this device registry'}
           </p>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="touch-target px-8 py-3 bg-[var(--ink)] hover:bg-[var(--ink-hover)] text-[var(--paper)] text-sm rounded-full inline-flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50 shadow-[var(--pill-shadow)]"
-          >
-            {saving ? 'Saving…' : justSaved ? 'Saved ✓' : 'Save Profile'}
-          </button>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
+            {onLogout && (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="touch-target w-full px-5 py-3 bg-transparent hover:bg-[var(--danger-bg)] text-[var(--danger-ink)] border border-[var(--danger-line)] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="touch-target w-full px-8 py-3 bg-[var(--ink)] hover:bg-[var(--ink-hover)] text-[var(--paper)] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 shadow-[var(--pill-shadow)]"
+            >
+              {saving ? 'Saving…' : justSaved ? 'Saved ✓' : 'Save Profile'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

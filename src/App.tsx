@@ -390,6 +390,7 @@ export default function App() {
         ) : currentView === 'profile' ? (
           <div className="max-w-5xl mx-auto">
             <ProfileTab
+              onLogout={handleSwitchRole}
               onProfileSaved={(p) => {
                 setInspectorProfile(p);
                 showToast('Profile saved and applied across the panel.', 'success');
@@ -458,7 +459,7 @@ export default function App() {
       />
 
       {/* Panel escape hatch — without this the Inspector panel is a dead end. */}
-      {role && !isLanding && (
+      {role && !isLanding && currentView !== 'profile' && (
         <button
           type="button"
           onClick={handleSwitchRole}
@@ -504,3 +505,4 @@ export default function App() {
     </div>
   );
 }
+

@@ -76,7 +76,11 @@ export function loadProfile(): FarmerProfile {
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       return { ...DEMO_PROFILE };
     }
-    return { ...EMPTY_PROFILE, ...(parsed as Partial<FarmerProfile>) };
+    const merged = { ...EMPTY_PROFILE, ...(parsed as Partial<FarmerProfile>) };
+    // A profile with no name reads as a blank form. Fall back to the demo
+    // identity so the panel always shows a complete farmer.
+    if (!merged.name?.trim()) return { ...DEMO_PROFILE };
+    return merged;
   } catch {
     return { ...DEMO_PROFILE };
   }
