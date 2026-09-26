@@ -12,7 +12,10 @@ import {
 import { SEASON_PROFILES, SEASON_ORDER } from '../seasonProfiles.js';
 import { GRAIN_BULK_DENSITIES, SAMPLE_GRAIN_IMAGES } from '../constants.js';
 import { SafeImage } from './SafeImage.js';
-import { previewEstimate, submitVerification } from '../services/api.js';
+import { previewEstimate, submitVerification, fetchInspectorProfile, fetchGovChecksByVerification, postGovCheck, type GovCheckInput } from '../services/api.js';
+import type { GovCheck } from '../types.js';
+import { buildVerifyUrl, govCheckInputFromVerification } from '../lib/verify.js';
+import QRCode from 'qrcode';
 import {
   bankableTonnes,
   reposeDeg,
@@ -198,6 +201,13 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     declaredText, setDeclaredText,
     declaredTouched, setDeclaredTouched,
     priceText, setPriceText,
+    agentType, setAgentType,
+    farmerName, setFarmerName,
+    loanRef, setLoanRef,
+    bankWarehouseName, setBankWarehouseName,
+    govWarehouseRef, setGovWarehouseRef,
+    govRegion, setGovRegion,
+    govScheme, setGovScheme,
   } = useSharedAudit();
   const liveVolume = coneVolume(heightMeters, baseDiameterMeters);
   const [receiptPhoto, setReceiptPhoto] = useState<PhotoState | null>(null);
@@ -213,6 +223,12 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [savedVerification, setSavedVerification] = useState<Verification | null>(null);
   const [loadingSample, setLoadingSample] = useState<boolean>(false);
+  // Permanent QR record (server-stored gov-check). One QR per audit, minted after confirm.
+  const [govCheck, setGovCheck] = useState<GovCheck | null>(null);
+  const [govCheckPending, setGovCheckPending] = useState<boolean>(false);
+  const [govCheckError, setGovCheckError] = useState<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const govInputRef = useRef<GovCheckInput | null>(null);
 
   // Camera capture state
   const [cameraOpen, setCameraOpen] = useState<boolean>(false);
@@ -246,6 +262,11 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
       setReceiptPhoto(null);
       setEstimationResult(null);
       setSavedVerification(null);
+      setGovCheck(null);
+      setQrDataUrl(null);
+      setGovCheckError(null);
+      setGovCheckPending(false);
+      govInputRef.current = null;
       setRunDeclared(0);
       setCompletedSteps(0);
       setActiveStep(-1);
@@ -268,6 +289,19 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     };
   }, []);
 
+  // Reuse saved inspector profile: default the audit context to the inspector's type once.
+  const profileAppliedRef = useRef(false);
+  useEffect(() => {
+    if (profileAppliedRef.current) return;
+    profileAppliedRef.current = true;
+    fetchInspectorProfile()
+      .then((p) => {
+        if (!p) return;
+        setAgentType(p.inspectorType === 'government' ? 'government' : 'bank');
+      })
+      .catch(() => {});
+  }, []);
+
   const resetWorkflow = () => {
     runTokenRef.current += 1;
     stopCamera();
@@ -283,6 +317,11 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     setUsedFallback(false);
     setIsSaving(false);
     setSavedVerification(null);
+    setGovCheck(null);
+    setQrDataUrl(null);
+    setGovCheckError(null);
+    setGovCheckPending(false);
+    govInputRef.current = null;
     setReceiptPhoto(null);
     setDeclaredTouched(false);
     setRunDeclared(0);
@@ -536,13 +575,89 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
         receiptPhotoUrl: receiptPhoto?.dataUrl,
         declaredSource: declaredTouched ? 'manual' : 'registry',
         runBy: currentAuditor,
+        agentType,
+        photoVerdict: {
+          primary: detectPrimary,
+          cross: detectCross,
+        },
+        bank: agentType === 'bank' ? {
+          farmerName: farmerName.trim() || undefined,
+          loanRef: loanRef.trim() || undefined,
+          warehouseName: (bankWarehouseName.trim() || warehouse.name).slice(0, 160) || undefined,
+        } : undefined,
+        gov: agentType === 'government' ? {
+          warehouseRef: (govWarehouseRef.trim() || warehouse.code).slice(0, 160) || undefined,
+          region: (govRegion.trim() || `${warehouse.district}, ${warehouse.state}`).slice(0, 160) || undefined,
+          scheme: govScheme,
+        } : undefined,
       });
       setSavedVerification(saved);
       onVerificationSaved(saved);
+      // Mint the permanent QR record for every saved audit (bank + government).
+      // The QR points at the server-stored result — never at a file.
+      const govInput: GovCheckInput = {
+        inspectorName: (agentType === 'bank'
+          ? farmerName.trim() || currentAuditor.name
+          : currentAuditor.name).slice(0, 120),
+        location: (agentType === 'government'
+          ? govRegion.trim() || (warehouse ? `${warehouse.district}, ${warehouse.state}` : '')
+          : warehouse ? `${warehouse.district}, ${warehouse.state}` : '').slice(0, 200),
+        storageName: warehouse?.name,
+        declaredTonnes: runDeclared,
+        estCentral: estimationResult.centralEstimateTonnes,
+        estLow: estimationResult.rangeLowTonnes,
+        estHigh: estimationResult.rangeHighTonnes,
+        volumeM3: estimationResult.volumeM3,
+        status: estimationResult.status,
+        checkerNote: estimationResult.auditRecommendation,
+        photoDataUrl: photo.dataUrl,
+        photoVerdict: { primary: detectPrimary, cross: detectCross },
+        verificationId: saved.id,
+        agentType,
+        scheme: agentType === 'government' ? govScheme : undefined,
+      };
+      govInputRef.current = govInput;
+      setGovCheck(null);
+      setQrDataUrl(null);
+      setGovCheckError(null);
+      setGovCheckPending(true);
+      try {
+        const record = await postGovCheck(govInput);
+        setGovCheck(record);
+        try {
+          setQrDataUrl(await QRCode.toDataURL(buildVerifyUrl(record.id), { width: 220, margin: 1 }));
+        } catch {
+          setGovCheckError('QR image failed to render — the stored record is safe; retry to regenerate it.');
+        }
+      } catch (err: any) {
+        setGovCheckError(err?.message || 'QR record save failed — verification is kept; retry for the QR.');
+      } finally {
+        setGovCheckPending(false);
+      }
     } catch (err: any) {
       setErrorMsg(err?.message || 'Could not save this audit to the registry. Try again.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const retryGovCheck = async () => {
+    const input = govInputRef.current;
+    if (!input) return;
+    setGovCheckError(null);
+    setGovCheckPending(true);
+    try {
+      const record = await postGovCheck(input);
+      setGovCheck(record);
+      try {
+        setQrDataUrl(await QRCode.toDataURL(buildVerifyUrl(record.id), { width: 220, margin: 1 }));
+      } catch {
+        setGovCheckError('QR image failed to render — the stored record is safe; retry to regenerate it.');
+      }
+    } catch (err: any) {
+      setGovCheckError(err?.message || 'QR record save failed — retry when connected.');
+    } finally {
+      setGovCheckPending(false);
     }
   };
 
@@ -556,8 +671,23 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     const bank = bankableTonnes(
       estimationResult.rangeLowTonnes, estimationResult.confidencePercent, humidityPercent, true,
     );
+    const isGov = agentType === 'government';
+    const reportTitle = isGov ? 'Public Stock Audit Report' : 'Collateral Stock Verification Report';
     const rows = [
-      ['StockProof New Audit Report', new Date().toISOString()],
+      [reportTitle, new Date().toISOString()],
+      ['Verify URL (true stored result)', govCheck ? buildVerifyUrl(govCheck.id) : 'No QR record minted yet — record the reading first'],
+      ['Agent type', isGov ? 'Government Agent' : 'Bank Agent'],
+      ...(isGov
+        ? [
+          ['Warehouse ID', govWarehouseRef.trim() || warehouse.code],
+          ['Region', govRegion.trim() || `${warehouse.district}, ${warehouse.state}`],
+          ['Scheme', govScheme],
+        ] as string[][]
+        : [
+          ['Farmer name', farmerName.trim() || warehouse.borrowerName || ''],
+          ['Loan / reference ID', loanRef.trim() || warehouse.loanReference || ''],
+          ['Warehouse', bankWarehouseName.trim() || warehouse.name],
+        ] as string[][]),
       ['Warehouse', warehouse.name],
       ['Code', warehouse.code],
       ['Location', `${warehouse.district}, ${warehouse.state}`],
@@ -604,12 +734,36 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handlePrintReport = () => {
+  const handlePrintReport = async () => {
     if (!warehouse || !photo || !estimationResult) return;
     const popup = window.open('', '_blank', 'width=900,height=700');
     if (!popup) {
       setErrorMsg('Pop-up blocker stopped the report window. Allow pop-ups, then try Export again.');
       return;
+    }
+    // QR for the printed report: reuse the minted record, else look up or mint one now.
+    let qrBlock = '';
+    try {
+      let gcId = govCheck?.id || '';
+      if (!gcId && savedVerification) {
+        try {
+          const found = await fetchGovChecksByVerification(savedVerification.id);
+          if (found && found.length > 0) gcId = found[0].id;
+        } catch { gcId = ''; }
+      }
+      if (!gcId && savedVerification) {
+        const minted = await postGovCheck(govCheckInputFromVerification(savedVerification, warehouse));
+        gcId = minted.id;
+        setGovCheck(minted);
+      }
+      if (gcId) {
+        const img = await QRCode.toDataURL(buildVerifyUrl(gcId), { width: 220, margin: 1 });
+        qrBlock = `<div class="label mono">Verification QR · scans to the true stored result</div>`
+          + `<img src="${img}" alt="Verify ${gcId}" style="max-width:180px" />`
+          + `<div class="mono">${buildVerifyUrl(gcId)}</div>`;
+      }
+    } catch {
+      qrBlock = '';
     }
     const diff = estimationResult.centralEstimateTonnes - runDeclared;
     const revP = reverseProof(runDeclared, baseDiameterMeters, heightMeters, {
@@ -619,8 +773,13 @@ export const NewAuditTab: React.FC<NewAuditTabProps> = ({
     const bankP = bankableTonnes(
       estimationResult.rangeLowTonnes, estimationResult.confidencePercent, humidityPercent, true,
     );
+    const isGovPrint = agentType === 'government';
+    const printTitle = isGovPrint ? 'Public Stock Audit Report' : 'Collateral Stock Verification Report';
+    const printSub = isGovPrint
+      ? `Government audit · ${(govWarehouseRef.trim() || warehouse.code)} · ${govRegion.trim() || `${warehouse.district}, ${warehouse.state}`} · Scheme: ${govScheme}`
+      : `Collateral verification${farmerName.trim() ? ` · Farmer: ${farmerName.trim()}` : ''}${loanRef.trim() ? ` · Loan ref: ${loanRef.trim()}` : ''}`;
     popup.document.write(`<!doctype html>
-<html><head><title>StockProof Audit Report — ${warehouse.code}</title>
+<html><head><title>${printTitle} — ${warehouse.code}</title>
 <style>
 body{font-family:Georgia,serif;color:#2B2016;max-width:720px;margin:32px auto;padding:0 24px}
 .mono{font-family:'Courier New',monospace;font-size:12px}
@@ -630,7 +789,8 @@ td{border:1px solid #ccc;padding:8px 10px}.label{color:#777;text-transform:upper
 img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 .footer{margin-top:24px;border-top:1px solid #ccc;padding-top:12px}
 </style></head><body>
-<div class="mono" style="color:#B98A2E;letter-spacing:2px">STOCKPROOF · FIELD AUDIT REPORT</div>
+<div class="mono" style="color:#B98A2E;letter-spacing:2px">STOCKPROOF · ${printTitle.toUpperCase()}</div>
+<div class="mono" style="margin-top:4px">${printSub}</div>
 <h1>${warehouse.name}</h1>
 <div class="mono">${warehouse.code} · ${warehouse.district}, ${warehouse.state} · Receipt ${warehouse.receiptNumber}</div>
 <div class="label mono">Estimated Stock</div>
@@ -654,6 +814,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 </table>
 <div class="label mono">Visual Evidence</div>
 <img src="${photo.dataUrl}" alt="Audit evidence" />
+${qrBlock}
 <p><strong>Audit reasoning:</strong> ${estimationResult.explanatoryReason}</p>
 <p><strong>Recommendation:</strong> ${estimationResult.auditRecommendation}</p>
 <div class="footer mono">Run by ${currentAuditor.name} · ${new Date().toLocaleString()} · The system supports the auditor — it does not replace the physical audit.</div>
@@ -680,8 +841,8 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
   if (warehouses.length === 0) {
     return (
       <div className="washi-sheet p-10 text-center">
-        <p className="serif-reading text-xl text-[#2A2118]">Preparing your bench…</p>
-        <p className="text-sm text-[#6B5F4F] mt-2">The registry is still waking up. This will only take a moment.</p>
+        <p className="serif-reading text-xl text-[var(--ink)]">Preparing your bench…</p>
+        <p className="text-sm text-[var(--ink-soft)] mt-2">The registry is still waking up. This will only take a moment.</p>
       </div>
     );
   }
@@ -690,10 +851,10 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
   const diff = estimationResult ? estimationResult.centralEstimateTonnes - runDeclared : 0;
   const verdictTone =
     !estimationResult || Math.abs(diff) < 0.5
-      ? { dot: '#4A6B4F', word: 'Within range', sentence: 'Sits comfortably within the expected range' }
+      ? { dot: 'var(--moss)', word: 'Within range', sentence: 'Sits comfortably within the expected range' }
       : diff < 0
-      ? { dot: '#9C4A42', word: 'Below declared', sentence: 'Reads lighter than what was declared' }
-      : { dot: '#A87F2A', word: 'Above declared', sentence: 'Reads a little heavier than declared' };
+      ? { dot: 'var(--danger)', word: 'Below declared', sentence: 'Reads lighter than what was declared' }
+      : { dot: 'var(--gold)', word: 'Above declared', sentence: 'Reads a little heavier than declared' };
 
   return (
     <div className="washi-page -m-4 sm:-m-6 lg:-m-8 px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
@@ -705,9 +866,9 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
         </p>
         <p className="eyebrow-quiet hidden sm:block">{STAGE_HINT[stageIndex]}</p>
       </div>
-      <div className="h-px bg-[rgba(42,33,24,0.12)] relative overflow-hidden rounded-full">
+      <div className="h-px bg-[var(--hairline-soft)] relative overflow-hidden rounded-full">
         <div
-          className="absolute inset-y-0 left-0 bg-[#2A2118] transition-all duration-700 ease-out rounded-full"
+          className="absolute inset-y-0 left-0 bg-[var(--ink)] transition-all duration-700 ease-out rounded-full"
           style={{ width: `${((stageIndex + 1) / STAGES.length) * 100}%` }}
         />
       </div>
@@ -715,10 +876,10 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
       {/* Where we are */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pt-1">
         <div className="max-w-xl">
-          <h1 className="serif-reading text-[#2A2118] text-3xl sm:text-4xl">
+          <h1 className="serif-reading text-[var(--ink)] text-3xl sm:text-4xl">
             {phase === 'result' ? 'What the pile holds' : phase === 'analyzing' ? 'Reading your photo' : phase === 'measure' ? 'Tell us what the photo cannot' : photo ? 'Is this the right frame?' : 'Begin with the pile itself'}
           </h1>
-          <p className="text-[15px] leading-relaxed text-[#6B5F4F] mt-2">
+          <p className="text-[15px] leading-relaxed text-[var(--ink-soft)] mt-2">
             {phase === 'result'
               ? `A careful reading of ${warehouse?.name || 'this store'}, held against its paper receipt.`
               : phase === 'measure'
@@ -728,12 +889,12 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
               : `For ${warehouse?.name || 'this warehouse'} — one honest photograph is enough to start.`}
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-[#6B5F4F] shrink-0">
+        <label className="flex items-center gap-2 text-xs text-[var(--ink-soft)] shrink-0">
           <span className="eyebrow-quiet">Store</span>
           <select
             value={warehouse?.id ?? ''}
             onChange={(e) => setWarehouseId(e.target.value)}
-            className="bg-[#FFFEFA] border border-[rgba(42,33,24,0.16)] rounded-[10px] px-3 py-2 text-xs text-[#2A2118] focus:outline-none focus:border-[#A87F2A] max-w-60 cursor-pointer"
+            className="bg-[var(--sheet)] border border-[var(--hairline)] rounded-[10px] px-3 py-2 text-xs text-[var(--ink)] focus:outline-none focus:border-[var(--gold-deep)] max-w-60 cursor-pointer"
           >
             {warehouses.map((w) => (
               <option key={w.id} value={w.id}>
@@ -746,19 +907,119 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 
       {errorMsg && (
         <div className="washi-sheet px-4 py-3 flex items-start gap-3 washi-enter" role="alert">
-          <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#9C4A42] shrink-0" />
-          <span className="text-sm leading-relaxed text-[#2A2118]">{errorMsg}</span>
+          <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[var(--clay)] shrink-0" />
+          <span className="text-sm leading-relaxed text-[var(--ink)]">{errorMsg}</span>
         </div>
       )}
+
+      {/* --- AGENT SELECTION — who is this audit for? (Inspector Panel split) --- */}
+      <div className="washi-sheet px-5 sm:px-6 py-5 washi-enter">
+        <p className="eyebrow-quiet">Who is this audit for?</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+          <button
+            type="button"
+            onClick={() => setAgentType('bank')}
+            className={`touch-target px-4 py-3 rounded-[10px] border text-left transition-all cursor-pointer ${
+              agentType === 'bank'
+                ? 'bg-[var(--card-ink-bg)] text-[var(--paper)] border-[var(--ink)]'
+                : 'bg-transparent border-[var(--hairline)] hover:border-[var(--hairline-strong)]'
+            }`}
+          >
+            <span className="block text-sm">🏦 Bank Agent</span>
+            <span className={`block text-xs mt-0.5 ${agentType === 'bank' ? 'opacity-70' : 'text-[var(--ink-faint)]'}`}>Collateral verification · saves to Bank Checks</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setAgentType('government')}
+            className={`touch-target px-4 py-3 rounded-[10px] border text-left transition-all cursor-pointer ${
+              agentType === 'government'
+                ? 'bg-[var(--card-ink-bg)] text-[var(--paper)] border-[var(--ink)]'
+                : 'bg-transparent border-[var(--hairline)] hover:border-[var(--hairline-strong)]'
+            }`}
+          >
+            <span className="block text-sm">🏛️ Government Agent</span>
+            <span className={`block text-xs mt-0.5 ${agentType === 'government' ? 'opacity-70' : 'text-[var(--ink-faint)]'}`}>Public stock audit · saves to Government Audit</span>
+          </button>
+        </div>
+        {agentType === 'bank' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+            <label className="block">
+              <span className="text-xs text-[var(--ink-soft)]">Farmer name (optional)</span>
+              <input
+                type="text"
+                value={farmerName}
+                onChange={(e) => setFarmerName(e.target.value)}
+                placeholder="e.g. Ramesh Patel"
+                className="mt-1 w-full bg-transparent border-b border-[var(--hairline)] focus:outline-none focus:border-[var(--ink)] text-sm py-1.5"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-[var(--ink-soft)]">Loan / reference ID (optional)</span>
+              <input
+                type="text"
+                value={loanRef}
+                onChange={(e) => setLoanRef(e.target.value)}
+                placeholder="e.g. AGRI-LN-772901"
+                className="mt-1 w-full bg-transparent border-b border-[var(--hairline)] focus:outline-none focus:border-[var(--ink)] text-sm py-1.5"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-[var(--ink-soft)]">Warehouse name/location (optional)</span>
+              <input
+                type="text"
+                value={bankWarehouseName}
+                onChange={(e) => setBankWarehouseName(e.target.value)}
+                placeholder={warehouse?.name || 'Warehouse'}
+                className="mt-1 w-full bg-transparent border-b border-[var(--hairline)] focus:outline-none focus:border-[var(--ink)] text-sm py-1.5"
+              />
+            </label>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+            <label className="block">
+              <span className="text-xs text-[var(--ink-soft)]">Warehouse ID (optional)</span>
+              <input
+                type="text"
+                value={govWarehouseRef}
+                onChange={(e) => setGovWarehouseRef(e.target.value)}
+                placeholder={warehouse?.code || 'WH ID'}
+                className="mt-1 w-full bg-transparent border-b border-[var(--hairline)] focus:outline-none focus:border-[var(--ink)] text-sm py-1.5"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-[var(--ink-soft)]">Region (optional)</span>
+              <input
+                type="text"
+                value={govRegion}
+                onChange={(e) => setGovRegion(e.target.value)}
+                placeholder={warehouse ? `${warehouse.district}, ${warehouse.state}` : 'Region'}
+                className="mt-1 w-full bg-transparent border-b border-[var(--hairline)] focus:outline-none focus:border-[var(--ink)] text-sm py-1.5"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-[var(--ink-soft)]">Scheme / purpose</span>
+              <select
+                value={govScheme}
+                onChange={(e) => setGovScheme(e.target.value as 'Public Distribution System' | 'Buffer Stock' | 'Other')}
+                className="mt-1 w-full bg-transparent border-b border-[var(--hairline)] focus:outline-none focus:border-[var(--ink)] text-sm py-1.5 cursor-pointer"
+              >
+                <option value="Public Distribution System">Public Distribution System</option>
+                <option value="Buffer Stock">Buffer Stock</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+          </div>
+        )}
+      </div>
 
       {/* --- PHASE: IDLE — big upload card --- */}
       {phase === 'idle' && (
         <div className="washi-sheet px-6 py-10 sm:px-12 sm:py-14 text-center washi-enter">
           <p className="eyebrow-quiet">One photograph · {warehouse?.code} · {declared.toFixed(0)} T on paper</p>
-          <h2 className="serif-reading text-3xl sm:text-4xl text-[#2A2118] mt-3 max-w-md mx-auto">
+          <h2 className="serif-reading text-3xl sm:text-4xl text-[var(--ink)] mt-3 max-w-md mx-auto">
             Photograph the pile, just as it rests
           </h2>
-          <p className="text-[15px] leading-relaxed text-[#6B5F4F] mt-3 max-w-md mx-auto">
+          <p className="text-[15px] leading-relaxed text-[var(--ink-soft)] mt-3 max-w-md mx-auto">
             Stand back until the whole mound breathes inside the frame. Morning light is kindest — no flash, no hurry.
           </p>
 
@@ -770,13 +1031,13 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
               e.preventDefault();
               handleFileSelected(e.dataTransfer.files?.[0]);
             }}
-            className="mt-8 mx-auto block w-full max-w-md washi-well px-6 py-8 text-center cursor-pointer transition-all hover:border-[#A87F2A]/50 hover:bg-[#EFE7D4]/70 group"
+            className="mt-8 mx-auto block w-full max-w-md washi-well px-6 py-8 text-center cursor-pointer transition-all hover:border-[var(--gold-line)] hover:bg-[var(--wash-strong)] group"
           >
-            <span className="mx-auto w-11 h-11 rounded-full bg-[#FFFEFA] border border-[rgba(42,33,24,0.14)] flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-              <Upload className="w-5 h-5 text-[#A87F2A]" />
+            <span className="mx-auto w-11 h-11 rounded-full bg-[var(--sheet)] border border-[var(--hairline)] flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+              <Upload className="w-5 h-5 text-[var(--gold-deep)]" />
             </span>
-            <span className="block text-[15px] text-[#2A2118]">Drop your photo here, or <span className="underline underline-offset-4 decoration-[#A87F2A]/50">browse</span></span>
-            <span className="block text-xs text-[#8A7D68] mt-1.5 font-mono">JPG · PNG · WebP, up to 15 MB</span>
+            <span className="block text-[15px] text-[var(--ink)]">Drop your photo here, or <span className="underline underline-offset-4 decoration-[var(--gold-line)]">browse</span></span>
+            <span className="block text-xs text-[var(--ink-faint)] mt-1.5 font-mono">JPG · PNG · WebP, up to 15 MB</span>
           </button>
 
           <input
@@ -797,26 +1058,26 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                 setShowChooser(false);
                 openCamera();
               }}
-              className="inline-flex items-center gap-1.5 text-[#2A2118] underline underline-offset-4 decoration-[rgba(42,33,24,0.25)] hover:decoration-[#A87F2A] transition-all cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-[var(--ink)] underline underline-offset-4 decoration-[var(--hairline-strong)] hover:decoration-[var(--gold-deep)] transition-all cursor-pointer"
             >
-              <Camera className="w-4 h-4 text-[#A87F2A]" />
+              <Camera className="w-4 h-4 text-[var(--gold-deep)]" />
               <span>Use camera</span>
             </button>
-            <span className="text-[#8A7D68]">·</span>
+            <span className="text-[var(--ink-faint)]">·</span>
             <button
               type="button"
               onClick={useSamplePhoto}
               disabled={loadingSample}
-              className="inline-flex items-center gap-1.5 text-[#6B5F4F] hover:text-[#2A2118] transition-colors cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 text-[var(--ink-soft)] hover:text-[var(--ink)] transition-colors cursor-pointer disabled:opacity-50"
             >
               {loadingSample ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
               ) : null}
-              <span className="underline underline-offset-4 decoration-[rgba(42,33,24,0.2)]">{loadingSample ? 'Fetching…' : 'Try a sample pile'}</span>
+              <span className="underline underline-offset-4 decoration-[var(--hairline)]">{loadingSample ? 'Fetching…' : 'Try a sample pile'}</span>
             </button>
           </div>
 
-          <p className="text-xs text-[#8A7D68] mt-7">
+          <p className="text-xs text-[var(--ink-faint)] mt-7">
             Nothing is measured until you ask. Your photo stays with you.
           </p>
         </div>
@@ -826,12 +1087,12 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
       {phase === 'preview' && photo && (
         <div className="washi-enter space-y-4">
           <figure className="washi-sheet overflow-hidden">
-            <div className="bg-[#221A12] p-2 sm:p-3">
+            <div className="bg-[var(--matte)] p-2 sm:p-3">
               <SafeImage src={photo.dataUrl} alt="The grain pile, as photographed" className="w-full max-h-[440px] object-contain rounded-[8px]" />
             </div>
             <figcaption className="flex flex-wrap items-baseline justify-between gap-2 px-5 sm:px-6 py-4">
-              <span className="serif-reading text-lg text-[#2A2118] italic">“{photo.source === 'camera' ? 'Fresh from the field' : photo.name}”</span>
-              <span className="font-mono text-[11px] text-[#8A7D68]">{photo.width} × {photo.height} · {photo.sizeKB} KB</span>
+              <span className="serif-reading text-lg text-[var(--ink)] italic">“{photo.source === 'camera' ? 'Fresh from the field' : photo.name}”</span>
+              <span className="font-mono text-[11px] text-[var(--ink-faint)]">{photo.width} × {photo.height} · {photo.sizeKB} KB</span>
             </figcaption>
           </figure>
           <PhotoGateBanner quality={photoQuality} />
@@ -845,7 +1106,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             <button
               type="button"
               onClick={resetWorkflow}
-              className="touch-target px-4 py-2.5 text-sm text-[#6B5F4F] hover:text-[#9C4A42] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="touch-target px-4 py-2.5 text-sm text-[var(--ink-soft)] hover:text-[var(--danger-ink)] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
               <span>Choose another</span>
@@ -856,7 +1117,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                 setErrorMsg(null);
                 setPhase('measure');
               }}
-              className="touch-target px-7 py-3 bg-[#2A2118] hover:bg-[#3A2E20] text-[#F6F1E7] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_8px_24px_-8px_rgba(42,33,24,0.5)]"
+              className="touch-target px-7 py-3 bg-[var(--ink)] hover:bg-[var(--ink-hover)] text-[var(--paper)] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[var(--pill-shadow)]"
             >
               <span>Yes, describe this pile</span>
               <ArrowRight className="w-4 h-4" />
@@ -871,21 +1132,21 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
         <div className="washi-sheet overflow-hidden">
           {/* Small keepsake of the photo — you never lose sight of what you saw */}
           <div className="flex items-center gap-4 px-5 sm:px-7 pt-5 sm:pt-6">
-            <SafeImage src={photo.dataUrl} alt="Your pile" className="w-16 h-16 rounded-[10px] object-cover border border-[rgba(42,33,24,0.14)] shrink-0" />
+            <SafeImage src={photo.dataUrl} alt="Your pile" className="w-16 h-16 rounded-[10px] object-cover border border-[var(--hairline)] shrink-0" />
             <div className="min-w-0">
-              <p className="serif-reading text-lg text-[#2A2118] leading-snug">This light will do nicely.</p>
+              <p className="serif-reading text-lg text-[var(--ink)] leading-snug">This light will do nicely.</p>
               {(() => {
                 const exposure = exposureVerdict(photo.meanLuma);
                 const longEdge = Math.max(photo.width, photo.height);
                 return (
-                  <p className="font-mono text-[11px] text-[#8A7D68] mt-0.5">
+                  <p className="font-mono text-[11px] text-[var(--ink-faint)] mt-0.5">
                     {photo.width} × {photo.height} · {exposure.label.toLowerCase()} · {photo.sizeKB} KB
                     {longEdge < 800 ? ' · a little soft — the range will breathe wider' : ''}
                   </p>
                 );
               })()}
             </div>
-            <p className="ml-auto font-mono text-[11px] text-[#8A7D68] hidden sm:block text-right leading-relaxed">
+            <p className="ml-auto font-mono text-[11px] text-[var(--ink-faint)] hidden sm:block text-right leading-relaxed">
               {liveVolume} m³<br />alive
             </p>
           </div>
@@ -897,12 +1158,12 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
           {/* Shape */}
           <div className="px-5 sm:px-7 pt-7">
             <p className="eyebrow-quiet">The shape of the pile</p>
-            <p className="serif-reading text-xl text-[#2A2118] mt-1">How tall, how wide — in your own steps</p>
+            <p className="serif-reading text-xl text-[var(--ink)] mt-1">How tall, how wide — in your own steps</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-5">
               <div>
                 <div className="flex justify-between items-baseline mb-2.5">
-                  <span className="text-sm text-[#6B5F4F]">Height at the crown</span>
-                  <span className="font-mono text-sm text-[#2A2118]">{heightMeters.toFixed(1)} m</span>
+                  <span className="text-sm text-[var(--ink-soft)]">Height at the crown</span>
+                  <span className="font-mono text-sm text-[var(--ink)]">{heightMeters.toFixed(1)} m</span>
                 </div>
                 <input
                   type="range" min="1.5" max="8.0" step="0.1" value={heightMeters}
@@ -910,14 +1171,14 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                   className="washi-range"
                   aria-label="Pile height in meters"
                 />
-                <div className="flex justify-between font-mono text-[10px] text-[#8A7D68] mt-1.5">
+                <div className="flex justify-between font-mono text-[10px] text-[var(--ink-faint)] mt-1.5">
                   <span>1.5</span><span>8.0</span>
                 </div>
               </div>
               <div>
                 <div className="flex justify-between items-baseline mb-2.5">
-                  <span className="text-sm text-[#6B5F4F]">Footprint across</span>
-                  <span className="font-mono text-sm text-[#2A2118]">{baseDiameterMeters.toFixed(1)} m</span>
+                  <span className="text-sm text-[var(--ink-soft)]">Footprint across</span>
+                  <span className="font-mono text-sm text-[var(--ink)]">{baseDiameterMeters.toFixed(1)} m</span>
                 </div>
                 <input
                   type="range" min="5.0" max="22.0" step="0.1" value={baseDiameterMeters}
@@ -925,17 +1186,17 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                   className="washi-range"
                   aria-label="Pile base diameter in meters"
                 />
-                <div className="flex justify-between font-mono text-[10px] text-[#8A7D68] mt-1.5">
+                <div className="flex justify-between font-mono text-[10px] text-[var(--ink-faint)] mt-1.5">
                   <span>5.0</span><span>22.0</span>
                 </div>
               </div>
             </div>
-            <p className="font-mono text-[11px] text-[#8A7D68] mt-4">
+            <p className="font-mono text-[11px] text-[var(--ink-faint)] mt-4">
               ≈ {liveVolume} m³ · {grainLabel()} rests at {GRAIN_BULK_DENSITIES[grainType]?.density.toFixed(3)} t/m³. A gauge rod on site tightens this further.
             </p>
           </div>
 
-          <div className="mx-5 sm:mx-7 my-7 h-px bg-[rgba(42,33,24,0.1)]" />
+          <div className="mx-5 sm:mx-7 my-7 h-px bg-[var(--wash)]" />
           <div className="px-5 sm:px-7 space-y-7">
               <div>
                 <p className="eyebrow-quiet">What grain is sleeping here</p>
@@ -945,8 +1206,8 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                       key={g} type="button" onClick={() => setGrainType(g as GrainType)}
                       className={`touch-target px-4 py-2 rounded-full border text-sm transition-all cursor-pointer ${
                         grainType === g
-                          ? 'bg-[#2A2118] text-[#F6F1E7] border-[#2A2118]'
-                          : 'bg-transparent text-[#6B5F4F] border-[rgba(42,33,24,0.18)] hover:border-[#2A2118]/40'
+                          ? 'bg-[var(--card-ink-bg)] text-[var(--paper)] border-[var(--ink)]'
+                          : 'bg-transparent text-[var(--ink-soft)] border-[var(--hairline)] hover:border-[var(--hairline-strong)]'
                       }`}
                     >
                       {GRAIN_BULK_DENSITIES[g as GrainType]?.name || g}
@@ -966,12 +1227,12 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                         key={s} type="button" onClick={() => setSeason(s)}
                         className={`touch-target px-3.5 py-3 rounded-[10px] text-left border transition-all cursor-pointer ${
                           active
-                            ? 'bg-[#EFE7D4] border-[#A87F2A]/60'
-                            : 'bg-transparent border-[rgba(42,33,24,0.12)] hover:border-[rgba(42,33,24,0.3)]'
+                            ? 'bg-[var(--well)] border-[var(--gold-line)]'
+                            : 'bg-transparent border-[var(--hairline-soft)] hover:border-[var(--hairline-strong)]'
                         }`}
                       >
-                        <div className="text-sm text-[#2A2118]">{p.name}</div>
-                        <div className="text-xs text-[#8A7D68] mt-0.5">{p.storageHint}</div>
+                        <div className="text-sm text-[var(--ink)]">{p.name}</div>
+                        <div className="text-xs text-[var(--ink-faint)] mt-0.5">{p.storageHint}</div>
                       </button>
                     );
                   })}
@@ -981,8 +1242,8 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
                   <div className="flex justify-between items-baseline mb-2.5">
-                    <span className="text-sm text-[#6B5F4F]">Moisture by meter</span>
-                    <span className="font-mono text-sm text-[#2A2118]">{humidityPercent.toFixed(1)}%</span>
+                    <span className="text-sm text-[var(--ink-soft)]">Moisture by meter</span>
+                    <span className="font-mono text-sm text-[var(--ink)]">{humidityPercent.toFixed(1)}%</span>
                   </div>
                   <input
                     type="range" min="8.0" max="20.0" step="0.2" value={humidityPercent}
@@ -993,8 +1254,8 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                 </div>
                 <div>
                   <div className="flex justify-between items-baseline mb-2.5">
-                    <span className="text-sm text-[#6B5F4F]">Days at rest</span>
-                    <span className="font-mono text-sm text-[#2A2118]">{storageDays} days</span>
+                    <span className="text-sm text-[var(--ink-soft)]">Days at rest</span>
+                    <span className="font-mono text-sm text-[var(--ink)]">{storageDays} days</span>
                   </div>
                   <input
                     type="range" min="1" max="120" step="1" value={storageDays}
@@ -1017,32 +1278,32 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                       key={c.id} type="button" onClick={() => setCompaction(c.id)}
                       className={`touch-target px-2 py-2.5 rounded-[10px] border transition-all cursor-pointer text-center ${
                         compaction === c.id
-                          ? 'bg-[#2A2118] text-[#F6F1E7] border-[#2A2118]'
-                          : 'bg-transparent border-[rgba(42,33,24,0.14)] hover:border-[rgba(42,33,24,0.32)]'
+                          ? 'bg-[var(--card-ink-bg)] text-[var(--paper)] border-[var(--ink)]'
+                          : 'bg-transparent border-[var(--hairline)] hover:border-[var(--hairline-strong)]'
                       }`}
                     >
                       <span className="block text-[13px] leading-tight">{c.label}</span>
-                      <span className={`block font-mono text-[10px] mt-0.5 ${compaction === c.id ? 'opacity-60' : 'text-[#8A7D68]'}`}>{c.sub}</span>
+                      <span className={`block font-mono text-[10px] mt-0.5 ${compaction === c.id ? 'opacity-60' : 'text-[var(--ink-faint)]'}`}>{c.sub}</span>
                     </button>
                   ))}
                 </div>
               </div>
           </div>
 
-          <div className="mx-5 sm:mx-7 my-7 h-px bg-[rgba(42,33,24,0.1)]" />
+          <div className="mx-5 sm:mx-7 my-7 h-px bg-[var(--wash)]" />
 
           {/* The paper side of the truth */}
           <div className="px-5 sm:px-7 pb-6 sm:pb-7">
             <div className="flex items-baseline justify-between gap-3">
               <p className="eyebrow-quiet">What the paper claims</p>
-              <p className="font-mono text-[11px] text-[#8A7D68]">{declaredTouched ? 'your hand' : 'from registry'}</p>
+              <p className="font-mono text-[11px] text-[var(--ink-faint)]">{declaredTouched ? 'your hand' : 'from registry'}</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-5 mt-4">
               <div className="sm:col-span-3">
-                <label htmlFor="declared-tonnes" className="serif-reading text-xl text-[#2A2118] block">
+                <label htmlFor="declared-tonnes" className="serif-reading text-xl text-[var(--ink)] block">
                   Read it off the receipt
                 </label>
-                <div className="flex items-baseline gap-2 mt-2 border-b border-[rgba(42,33,24,0.2)] focus-within:border-[#2A2118] transition-colors pb-2">
+                <div className="flex items-baseline gap-2 mt-2 border-b border-[var(--hairline)] focus-within:border-[var(--ink)] transition-colors pb-2">
                   <input
                     id="declared-tonnes"
                     type="number"
@@ -1054,16 +1315,16 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                       setDeclaredText(e.target.value);
                       setDeclaredTouched(true);
                     }}
-                    className="w-full bg-transparent text-4xl serif-reading text-[#2A2118] focus:outline-none placeholder:text-[#8A7D68]/50"
+                    className="w-full bg-transparent text-4xl serif-reading text-[var(--ink)] focus:outline-none placeholder:text-[var(--ink-faint)]"
                     placeholder={warehouse.currentDeclaredTonnes.toFixed(1)}
                   />
-                  <span className="font-mono text-sm text-[#8A7D68]">tonnes</span>
+                  <span className="font-mono text-sm text-[var(--ink-faint)]">tonnes</span>
                 </div>
-                <p className="font-mono text-[11px] text-[#8A7D68] mt-2">
+                <p className="font-mono text-[11px] text-[var(--ink-faint)] mt-2">
                   Registry holds {warehouse.currentDeclaredTonnes.toFixed(1)} T · this store can carry {warehouse.capacityTonnes.toFixed(0)} T
                 </p>
                 {Number.isFinite(parsedDeclared) && parsedDeclared > warehouse.capacityTonnes && (
-                  <p className="text-xs text-[#9C4A42] mt-2">
+                  <p className="text-xs text-[var(--danger-ink)] mt-2">
                     That is more than the store can hold — worth a second glance at the receipt.
                   </p>
                 )}
@@ -1074,13 +1335,13 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                   <div className="flex items-center gap-3 washi-well p-2.5 mt-3">
                     <SafeImage src={receiptPhoto.dataUrl} alt="Declared receipt" className="w-14 h-14 rounded-[8px] object-cover shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-[#2A2118] truncate">{receiptPhoto.name}</p>
-                      <p className="font-mono text-[11px] text-[#4A6B4F]">kept with this reading</p>
+                      <p className="text-xs text-[var(--ink)] truncate">{receiptPhoto.name}</p>
+                      <p className="font-mono text-[11px] text-[var(--moss)]">kept with this reading</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setReceiptPhoto(null)}
-                      className="font-mono text-[11px] text-[#8A7D68] hover:text-[#9C4A42] underline underline-offset-2 shrink-0 cursor-pointer"
+                      className="font-mono text-[11px] text-[var(--ink-faint)] hover:text-[var(--danger-ink)] underline underline-offset-2 shrink-0 cursor-pointer"
                     >
                       Remove
                     </button>
@@ -1090,9 +1351,9 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                     <button
                       type="button"
                       onClick={() => receiptInputRef.current?.click()}
-                      className="touch-target mt-3 w-full px-4 py-3 border border-dashed border-[rgba(42,33,24,0.25)] hover:border-[#A87F2A]/60 rounded-[10px] text-sm text-[#6B5F4F] hover:text-[#2A2118] inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="touch-target mt-3 w-full px-4 py-3 border border-dashed border-[var(--hairline-strong)] hover:border-[var(--gold-line)] rounded-[10px] text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
-                      <Receipt className="w-4 h-4 text-[#A87F2A]" />
+                      <Receipt className="w-4 h-4 text-[var(--gold-deep)]" />
                       <span>Photograph the receipt</span>
                     </button>
                     <input
@@ -1107,7 +1368,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                     />
                   </>
                 )}
-                <p className="text-xs text-[#8A7D68] mt-2 leading-relaxed">
+                <p className="text-xs text-[var(--ink-faint)] mt-2 leading-relaxed">
                   Entirely optional. The reading never waits for it.
                 </p>
               </div>
@@ -1120,7 +1381,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             <button
               type="button"
               onClick={() => setPhase('preview')}
-              className="touch-target px-4 py-2.5 text-sm text-[#6B5F4F] hover:text-[#2A2118] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="touch-target px-4 py-2.5 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Back to the photo</span>
@@ -1128,7 +1389,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             <button
               type="button"
               onClick={runAnalysis}
-              className="touch-target px-7 py-3 bg-[#2A2118] hover:bg-[#3A2E20] text-[#F6F1E7] text-sm rounded-full inline-flex items-center gap-2 transition-all cursor-pointer shadow-[0_8px_24px_-8px_rgba(42,33,24,0.5)]"
+              className="touch-target px-7 py-3 bg-[var(--ink)] hover:bg-[var(--ink-hover)] text-[var(--paper)] text-sm rounded-full inline-flex items-center gap-2 transition-all cursor-pointer shadow-[var(--pill-shadow)]"
             >
               <span>Read the stock</span>
               <ArrowRight className="w-4 h-4" />
@@ -1141,17 +1402,17 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
       {phase === 'analyzing' && photo && (
         <div className="washi-sheet overflow-hidden washi-enter">
           <div className="grid grid-cols-1 md:grid-cols-2">
-            <div className="relative bg-[#221A12] p-2 sm:p-3 min-h-64">
+            <div className="relative bg-[var(--matte)] p-2 sm:p-3 min-h-64">
               <SafeImage src={photo.dataUrl} alt="Your pile, being read" className="w-full h-full min-h-64 max-h-[380px] object-cover rounded-[8px] opacity-90 washi-veil" />
-              <div className="absolute inset-2 sm:inset-3 rounded-[8px] bg-[#F6F1E7]/10 backdrop-blur-[1px]" />
+              <div className="absolute inset-2 sm:inset-3 rounded-[8px] bg-[var(--oncard-wash)] backdrop-blur-[1px]" />
             </div>
             <div className="px-6 sm:px-8 py-7 sm:py-9 flex flex-col justify-center">
               <p className="eyebrow-quiet">{warehouse?.code} · {warehouse?.receiptNumber}</p>
-              <h2 className="serif-reading text-2xl sm:text-[28px] text-[#2A2118] mt-2 min-h-[2.5em]">
+              <h2 className="serif-reading text-2xl sm:text-[28px] text-[var(--ink)] mt-2 min-h-[2.5em]">
                 {activeStep >= 0 && ANALYSIS_STEPS[activeStep] ? `${ANALYSIS_STEPS[activeStep]}…` : 'Reading your photo…'}
               </h2>
-              <div className="mt-5 h-[2px] bg-[rgba(42,33,24,0.1)] rounded-full overflow-hidden">
-                <div className="h-full bg-[#2A2118] rounded-full transition-all duration-500" style={{ width: `${(completedSteps / ANALYSIS_STEPS.length) * 100}%` }} />
+              <div className="mt-5 h-[2px] bg-[var(--wash)] rounded-full overflow-hidden">
+                <div className="h-full bg-[var(--ink)] rounded-full transition-all duration-500" style={{ width: `${(completedSteps / ANALYSIS_STEPS.length) * 100}%` }} />
               </div>
               <div className="mt-4 space-y-1.5">
                 {ANALYSIS_STEPS.map((label, i) => {
@@ -1160,7 +1421,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                   return (
                     <p
                       key={label}
-                      className={`text-[13px] transition-all duration-300 ${done ? 'text-[#8A7D68]' : active ? 'text-[#2A2118]' : 'text-[#8A7D68]/45'}`}
+                      className={`text-[13px] transition-all duration-300 ${done ? 'text-[var(--ink-faint)]' : active ? 'text-[var(--ink)]' : 'text-[var(--ink-faint)]'}`}
                     >
                       <span className="inline-block w-5 font-mono text-[11px]">{done ? '·' : active ? '—' : '·'}</span>
                       {label}
@@ -1178,49 +1439,49 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
         <div className="washi-enter-slow space-y-0">
           {usedFallback && (
             <div className="washi-sheet px-4 py-3 mb-5 flex items-start gap-3">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#A87F2A] shrink-0" />
-              <span className="text-sm text-[#2A2118]">We could not reach the calculation engine, so this is a gentle demo reading from your own volume. Re-read when you are back online.</span>
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[var(--gold-deep)] shrink-0" />
+              <span className="text-sm text-[var(--ink)]">We could not reach the calculation engine, so this is a gentle demo reading from your own volume. Re-read when you are back online.</span>
             </div>
           )}
 
           {/* The finding — what was analyzed → discovered */}
           <div className="washi-sheet px-6 sm:px-10 pt-8 sm:pt-10 pb-8 text-center overflow-hidden">
             <p className="eyebrow-quiet">{warehouse.code} · {warehouse.receiptNumber} · {SEASON_PROFILES[season].name}</p>
-            <p className="mt-3 inline-flex items-center gap-2 text-[13px] text-[#6B5F4F]">
+            <p className="mt-3 inline-flex items-center gap-2 text-[13px] text-[var(--ink-soft)]">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: verdictTone.dot }} />
               {verdictTone.word} · {estimationResult.confidencePercent}% sure
             </p>
-            <h2 className="serif-reading text-[#2A2118] text-[26px] sm:text-3xl mt-2">
+            <h2 className="serif-reading text-[var(--ink)] text-[26px] sm:text-3xl mt-2">
               {verdictTone.sentence}
             </h2>
             <div className="flex items-baseline justify-center gap-2 mt-4">
-              <span className="serif-reading text-[#2A2118] text-6xl sm:text-7xl leading-none">
+              <span className="serif-reading text-[var(--ink)] text-6xl sm:text-7xl leading-none">
                 {estimationResult.centralEstimateTonnes.toFixed(1)}
               </span>
-              <span className="font-mono text-sm text-[#8A7D68]">tonnes</span>
+              <span className="font-mono text-sm text-[var(--ink-faint)]">tonnes</span>
             </div>
-            <p className="font-mono text-xs text-[#8A7D68] mt-3">
+            <p className="font-mono text-xs text-[var(--ink-faint)] mt-3">
               likely between {estimationResult.rangeLowTonnes.toFixed(1)} and {estimationResult.rangeHighTonnes.toFixed(1)} T
             </p>
 
             {/* Why it matters — the quiet ledger */}
-            <div className="max-w-md mx-auto mt-7 pt-6 border-t border-[rgba(42,33,24,0.12)] grid grid-cols-3 gap-4 text-center">
+            <div className="max-w-md mx-auto mt-7 pt-6 border-t border-[var(--hairline-soft)] grid grid-cols-3 gap-4 text-center">
               <div>
                 <p className="eyebrow-quiet">On paper</p>
-                <p className="font-mono text-[15px] text-[#2A2118] mt-1">{runDeclared.toFixed(1)} T</p>
+                <p className="font-mono text-[15px] text-[var(--ink)] mt-1">{runDeclared.toFixed(1)} T</p>
               </div>
               <div>
                 <p className="eyebrow-quiet">Difference</p>
-                <p className="font-mono text-[15px] mt-1" style={{ color: Math.abs(diff) < 0.5 ? '#4A6B4F' : diff < 0 ? '#9C4A42' : '#A87F2A' }}>
+                <p className="font-mono text-[15px] mt-1" style={{ color: Math.abs(diff) < 0.5 ? 'var(--success-ink)' : diff < 0 ? 'var(--danger-ink)' : 'var(--gold)' }}>
                   {diff > 0 ? '+' : ''}{diff.toFixed(1)} T
                 </p>
               </div>
               <div>
                 <p className="eyebrow-quiet">Volume seen</p>
-                <p className="font-mono text-[15px] text-[#2A2118] mt-1">{estimationResult.volumeM3.toFixed(0)} m³</p>
+                <p className="font-mono text-[15px] text-[var(--ink)] mt-1">{estimationResult.volumeM3.toFixed(0)} m³</p>
               </div>
             </div>
-            <p className="text-xs text-[#8A7D68] mt-4">
+            <p className="text-xs text-[var(--ink-faint)] mt-4">
               Paper says {runDeclared.toFixed(1)} T ({declaredTouched ? 'your hand' : 'registry'}). The pile suggests {estimationResult.centralEstimateTonnes.toFixed(1)} T.
             </p>
 
@@ -1237,9 +1498,9 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             const price = parseFloat(priceText);
             return (
               <div className="mt-8 space-y-4 text-left">
-                <div className="text-center font-mono text-[11px] text-[#8A7D68]">
+                <div className="text-center font-mono text-[11px] text-[var(--ink-faint)]">
                   {runDeclared.toFixed(1)}T CLAIMED · {bank.bankableTonnes.toFixed(1)}T DEFENSIBLE ·{' '}
-                  <span className={rev.supported ? 'text-[#4A6B4F]' : 'text-[#9C4A42]'}>
+                  <span className={rev.supported ? 'text-[var(--success-ink)]' : 'text-[var(--danger-ink)]'}>
                     {rev.supported ? 'CLAIM SUPPORTED' : 'CLAIM NOT SUPPORTED'}
                   </span>
                 </div>
@@ -1252,7 +1513,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                       type="number" min="0" inputMode="numeric" value={priceText}
                       onChange={(e) => setPriceText(e.target.value)}
                       placeholder="e.g. 26000"
-                      className="mt-1 w-full bg-transparent font-mono text-lg text-[#2A2118] border-b border-[rgba(42,33,24,0.2)] focus:outline-none pb-1"
+                      className="mt-1 w-full bg-transparent font-mono text-lg text-[var(--ink)] border-b border-[var(--hairline)] focus:outline-none pb-1"
                     />
                   </label>
                 </div>
@@ -1280,22 +1541,22 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <figure>
-              <div className="rounded-[12px] overflow-hidden border border-[rgba(42,33,24,0.12)] bg-[#221A12] p-1.5">
+              <div className="rounded-[12px] overflow-hidden border border-[var(--hairline-soft)] bg-[var(--matte)] p-1.5">
                 <SafeImage src={photo.dataUrl} alt="The pile you photographed" className="w-full h-72 sm:h-80 object-cover rounded-[8px]" />
               </div>
-              <figcaption className="font-mono text-[11px] text-[#8A7D68] mt-2">The pile · {photo.sizeKB} KB · {photo.width}×{photo.height}</figcaption>
+              <figcaption className="font-mono text-[11px] text-[var(--ink-faint)] mt-2">The pile · {photo.sizeKB} KB · {photo.width}×{photo.height}</figcaption>
             </figure>
             <figure>
               {receiptPhoto ? (
                 <>
-                  <div className="rounded-[12px] overflow-hidden border border-[rgba(42,33,24,0.12)] bg-[#FFFEFA] p-1.5">
+                  <div className="rounded-[12px] overflow-hidden border border-[var(--hairline-soft)] bg-[var(--sheet)] p-1.5">
                     <SafeImage src={receiptPhoto.dataUrl} alt="The paper receipt" className="w-full h-52 object-cover rounded-[8px]" />
                   </div>
-                  <figcaption className="font-mono text-[11px] text-[#8A7D68] mt-2">The paper · kept together</figcaption>
+                  <figcaption className="font-mono text-[11px] text-[var(--ink-faint)] mt-2">The paper · kept together</figcaption>
                 </>
               ) : (
-                <div className="rounded-[12px] border border-dashed border-[rgba(42,33,24,0.2)] h-52 flex items-center justify-center px-6 text-center">
-                  <p className="text-sm text-[#8A7D68] leading-relaxed">No receipt photo — the reading stands on the pile alone, against {runDeclared.toFixed(1)} T {declaredTouched ? 'in your hand' : 'in the registry'}.</p>
+                <div className="rounded-[12px] border border-dashed border-[var(--hairline)] h-52 flex items-center justify-center px-6 text-center">
+                  <p className="text-sm text-[var(--ink-faint)] leading-relaxed">No receipt photo — the reading stands on the pile alone, against {runDeclared.toFixed(1)} T {declaredTouched ? 'in your hand' : 'in the registry'}.</p>
                 </div>
               )}
             </figure>
@@ -1304,13 +1565,13 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 
           {/* Why it matters — in plain words */}
           <div className="text-left mt-8 space-y-4">
-            <p className="text-[15px] leading-relaxed text-[#2A2118]">{estimationResult.explanatoryReason}</p>
-            <div className="flex items-start gap-2.5 pt-4 border-t border-[rgba(42,33,24,0.12)]">
-              <ShieldCheck className="w-4 h-4 text-[#A87F2A] shrink-0 mt-0.5" />
-              <p className="text-sm leading-relaxed text-[#6B5F4F]">{estimationResult.auditRecommendation}</p>
+            <p className="text-[15px] leading-relaxed text-[var(--ink)]">{estimationResult.explanatoryReason}</p>
+            <div className="flex items-start gap-2.5 pt-4 border-t border-[var(--hairline-soft)]">
+              <ShieldCheck className="w-4 h-4 text-[var(--gold-deep)] shrink-0 mt-0.5" />
+              <p className="text-sm leading-relaxed text-[var(--ink-soft)]">{estimationResult.auditRecommendation}</p>
             </div>
             <details className="group">
-              <summary className="font-mono text-[11px] text-[#8A7D68] hover:text-[#2A2118] cursor-pointer list-none underline underline-offset-4 decoration-[rgba(42,33,24,0.2)]">
+              <summary className="font-mono text-[11px] text-[var(--ink-faint)] hover:text-[var(--ink)] cursor-pointer list-none underline underline-offset-4 decoration-[var(--hairline)]">
                 How this number was found
               </summary>
               <dl className="mt-3 space-y-1.5 text-[13px]">
@@ -1319,8 +1580,8 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                   [`${SEASON_PROFILES[season].name}`, `${humidityPercent.toFixed(1)}% · ${compaction} · ${storageDays} days`],
                 ].map(([k, v]) => (
                   <div key={k} className="flex items-baseline justify-between gap-3">
-                    <dt className="text-[#6B5F4F]">{k}</dt>
-                    <dd className="font-mono text-xs text-[#2A2118] text-right">{v}</dd>
+                    <dt className="text-[var(--ink-soft)]">{k}</dt>
+                    <dd className="font-mono text-xs text-[var(--ink)] text-right">{v}</dd>
                   </div>
                 ))}
               </dl>
@@ -1331,11 +1592,41 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
           {/* What next — calm, unhurried */}
           <div className="mt-6">
           {savedVerification ? (
-            <div className="washi-sheet px-5 py-4 flex items-start gap-3">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#4A6B4F] shrink-0" />
-              <p className="text-sm leading-relaxed text-[#2A2118]">
-                Kept in the registry as {savedVerification.id}. It now rests with the portfolio and the review queue.
-              </p>
+            <div className="space-y-3">
+              <div className="washi-sheet px-5 py-4 flex items-start gap-3">
+                <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[var(--moss)] shrink-0" />
+                <p className="text-sm leading-relaxed text-[var(--ink)]">
+                  Recorded as {savedVerification.id}. It now appears under {savedVerification.agentType === 'government' ? 'Government Audit' : 'Bank Checks'}.
+                </p>
+              </div>
+              <div className="washi-sheet px-5 py-4">
+                <p className="eyebrow-quiet">Verification QR · points at the stored record</p>
+                {govCheckPending && (
+                  <p className="text-sm text-[var(--ink-soft)] mt-2">Minting the permanent record…</p>
+                )}
+                {!govCheckPending && govCheck && qrDataUrl && (
+                  <div className="flex items-center gap-4 mt-3">
+                    <img src={qrDataUrl} alt={`Verify ${govCheck.id}`} className="w-[110px] h-[110px] rounded-[8px] border border-[var(--hairline)] bg-white shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs text-[var(--ink)]">{govCheck.id}</p>
+                      <p className="font-mono text-[11px] text-[var(--ink-faint)] mt-1 break-all">{buildVerifyUrl(govCheck.id)}</p>
+                      <p className="text-xs text-[var(--ink-soft)] mt-1">Scanning opens the true stored result — a report can never fake what this points to.</p>
+                    </div>
+                  </div>
+                )}
+                {!govCheckPending && govCheckError && (
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <p className="text-sm text-[var(--danger-ink)]">QR pending — {govCheckError}</p>
+                    <button
+                      type="button"
+                      onClick={retryGovCheck}
+                      className="touch-target px-4 py-2 text-xs bg-[var(--ink)] text-[var(--ink-inverse)] rounded-full cursor-pointer"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="flex flex-col sm:flex-row items-stretch gap-3">
@@ -1343,16 +1634,16 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                 type="button"
                 onClick={handleSaveAudit}
                 disabled={isSaving}
-                className="touch-target flex-1 px-6 py-3.5 bg-[#2A2118] hover:bg-[#3A2E20] text-[#F6F1E7] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_8px_24px_-8px_rgba(42,33,24,0.5)] disabled:opacity-50"
+                className="touch-target flex-1 px-6 py-3.5 bg-[var(--ink)] hover:bg-[var(--ink-hover)] text-[var(--paper)] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[var(--pill-shadow)] disabled:opacity-50"
               >
                 {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                <span>{isSaving ? 'Keeping…' : 'Keep this reading'}</span>
+                <span>{isSaving ? 'Recording…' : 'Record This Reading'}</span>
               </button>
               <div className="flex items-center justify-center gap-5">
                 <button
                   type="button"
                   onClick={handlePrintReport}
-                  className="touch-target inline-flex items-center gap-1.5 text-sm text-[#6B5F4F] hover:text-[#2A2118] underline underline-offset-4 decoration-[rgba(42,33,24,0.2)] transition-all cursor-pointer"
+                  className="touch-target inline-flex items-center gap-1.5 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] underline underline-offset-4 decoration-[var(--hairline)] transition-all cursor-pointer"
                 >
                   <Printer className="w-4 h-4" />
                   <span>Print</span>
@@ -1361,7 +1652,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                   type="button"
                   onClick={handleExportCSV}
                   title="Download audit as CSV"
-                  className="touch-target inline-flex items-center gap-1.5 text-sm text-[#6B5F4F] hover:text-[#2A2118] underline underline-offset-4 decoration-[rgba(42,33,24,0.2)] transition-all cursor-pointer"
+                  className="touch-target inline-flex items-center gap-1.5 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] underline underline-offset-4 decoration-[var(--hairline)] transition-all cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
                   <span>CSV</span>
@@ -1372,7 +1663,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
           <button
             type="button"
             onClick={resetWorkflow}
-            className="mx-auto mt-5 touch-target px-5 py-2.5 text-sm text-[#8A7D68] hover:text-[#2A2118] inline-flex items-center gap-2 transition-colors cursor-pointer"
+            className="mx-auto mt-5 touch-target px-5 py-2.5 text-sm text-[var(--ink-faint)] hover:text-[var(--ink)] inline-flex items-center gap-2 transition-colors cursor-pointer"
           >
             <RotateCcw className="w-4 h-4" />
             <span>Begin another pile</span>
@@ -1383,16 +1674,16 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 
       {/* --- Camera — held gently --- */}
       {cameraOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2A2118]/60 backdrop-blur-sm washi-veil">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--overlay)] backdrop-blur-sm washi-veil">
           <div className="washi-sheet overflow-hidden max-w-lg w-full washi-enter">
-            <div className="px-5 py-3.5 border-b border-[rgba(42,33,24,0.12)] flex items-center justify-between">
+            <div className="px-5 py-3.5 border-b border-[var(--hairline-soft)] flex items-center justify-between">
               <span className="eyebrow-quiet">
                 Camera
               </span>
               <button
                 type="button"
                 onClick={() => { stopCamera(); setCameraOpen(false); }}
-                className="text-[#6B5F4F] hover:text-[#2A2118] cursor-pointer transition-colors"
+                className="text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer transition-colors"
                 aria-label="Close camera"
               >
                 <X className="w-5 h-5" />
@@ -1400,14 +1691,14 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             </div>
             <div className="p-4 space-y-3">
               {cameraError ? (
-                <div className="washi-well px-4 py-3.5 text-sm text-[#2A2118] leading-relaxed">
+                <div className="washi-well px-4 py-3.5 text-sm text-[var(--ink)] leading-relaxed">
                   {cameraError}
                 </div>
               ) : (
-                <div className="relative rounded-[10px] overflow-hidden bg-[#221A12] aspect-4/3">
+                <div className="relative rounded-[10px] overflow-hidden bg-[var(--matte)] aspect-4/3">
                   <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
                   {cameraStarting && (
-                    <div className="absolute inset-0 flex items-center justify-center text-[#F6F1E7] text-sm gap-2">
+                    <div className="absolute inset-0 flex items-center justify-center text-[var(--paper)] text-sm gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
                       <span>Waking the camera…</span>
                     </div>
@@ -1420,7 +1711,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                     type="button"
                     onClick={captureFromCamera}
                     disabled={cameraStarting}
-                    className="touch-target flex-1 px-5 py-3 bg-[#2A2118] hover:bg-[#3A2E20] text-[#F6F1E7] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                    className="touch-target flex-1 px-5 py-3 bg-[var(--ink)] hover:bg-[var(--ink-hover)] text-[var(--paper)] text-sm rounded-full inline-flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                   >
                     <Camera className="w-4 h-4" />
                     <span>Keep this frame</span>
@@ -1429,7 +1720,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                 <button
                   type="button"
                   onClick={() => { stopCamera(); setCameraOpen(false); }}
-                  className="touch-target px-4 py-3 text-sm text-[#6B5F4F] hover:text-[#2A2118] transition-colors cursor-pointer"
+                  className="touch-target px-4 py-3 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] transition-colors cursor-pointer"
                 >
                   Not now
                 </button>

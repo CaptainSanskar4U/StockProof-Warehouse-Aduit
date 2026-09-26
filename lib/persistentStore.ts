@@ -11,10 +11,13 @@ import {
   INITIAL_WAREHOUSES,
   INITIAL_VERIFICATIONS,
   INITIAL_REVIEWS,
+  DEMO_PROFILE,
+  mergeProfileBranch,
   type StorageData,
 } from '../server/store.js';
 import type {
-  FarmerCheck,
+  GovCheck,
+  InspectorProfile,
   PortfolioSummary,
   ReviewItem,
   Verification,
@@ -25,7 +28,8 @@ const KEYS = {
   warehouses: 'stockproof:warehouses',
   verifications: 'stockproof:verifications',
   reviews: 'stockproof:reviews',
-  farmerChecks: 'stockproof:farmerChecks',
+  govChecks: 'stockproof:gov-checks',
+  profile: 'stockproof:profile',
 } as const;
 
 function redisConfigured(): boolean {
@@ -46,11 +50,15 @@ function getRedis(): Redis | null {
 
 function freshSeed(): StorageData {
   // JSON clone so callers can never mutate the seed constants.
+  // govChecks are permanent evidence: never seeded, never wiped.
+  // The demo inspector identity is seeded so a fresh clone or a cold-start
+  // serverless instance still has an inspector.
   return {
     warehouses: JSON.parse(JSON.stringify(INITIAL_WAREHOUSES)),
     verifications: JSON.parse(JSON.stringify(INITIAL_VERIFICATIONS)),
     reviews: JSON.parse(JSON.stringify(INITIAL_REVIEWS)),
-    farmerChecks: [],
+    profile: JSON.parse(JSON.stringify(DEMO_PROFILE)),
+    govChecks: [],
   };
 }
 
@@ -60,19 +68,20 @@ async function load(): Promise<StorageData> {
   const redis = getRedis();
   if (redis) {
     try {
-      const [warehouses, verifications, reviews, farmerChecks] = await Promise.all([
+      const [warehouses, verifications, reviews, govChecks, profile] = await Promise.all([
         redis.get<Warehouse[]>(KEYS.warehouses),
         redis.get<Verification[]>(KEYS.verifications),
         redis.get<ReviewItem[]>(KEYS.reviews),
-        redis.get<FarmerCheck[]>(KEYS.farmerChecks),
+        redis.get<GovCheck[]>(KEYS.govChecks),
+        redis.get<InspectorProfile>(KEYS.profile),
       ]);
       if (warehouses && verifications && reviews) {
-        // farmerChecks may predate the key — default, never reseed QR'd records.
-        return { warehouses, verifications, reviews, farmerChecks: farmerChecks ?? [] };
+        return { warehouses, verifications, reviews, govChecks: govChecks || [], profile: profile || null };
       }
       const seed = freshSeed();
-      // Never wipe existing QR'd farmer checks on partial Redis eviction.
-      seed.farmerChecks = farmerChecks ?? mem?.farmerChecks ?? [];
+      // Preserve any existing QR records across reseeds.
+      if (govChecks) seed.govChecks = govChecks;
+      if (profile) seed.profile = profile;
       await save(seed);
       return seed;
     } catch (err) {
@@ -80,6 +89,7 @@ async function load(): Promise<StorageData> {
     }
   }
   if (!mem) mem = freshSeed();
+  if (!Array.isArray(mem.govChecks)) mem.govChecks = [];
   return mem;
 }
 
@@ -91,7 +101,8 @@ async function save(data: StorageData): Promise<void> {
         redis.set(KEYS.warehouses, data.warehouses),
         redis.set(KEYS.verifications, data.verifications),
         redis.set(KEYS.reviews, data.reviews),
-        redis.set(KEYS.farmerChecks, data.farmerChecks ?? []),
+        redis.set(KEYS.govChecks, data.govChecks || []),
+        redis.set(KEYS.profile, data.profile || null),
       ]);
       return;
     } catch (err) {
@@ -115,12 +126,12 @@ export async function getWarehouses(status?: string, search?: string): Promise<W
     const q = search.toLowerCase();
     warehouses = warehouses.filter(
       (w) =>
-        (w.name ?? '').toLowerCase().includes(q) ||
-        (w.code ?? '').toLowerCase().includes(q) ||
-        (w.district ?? '').toLowerCase().includes(q) ||
-        (w.state ?? '').toLowerCase().includes(q) ||
-        (w.receiptNumber ?? '').toLowerCase().includes(q) ||
-        (w.borrowerName ?? '').toLowerCase().includes(q),
+        w.name.toLowerCase().includes(q) ||
+        w.code.toLowerCase().includes(q) ||
+        w.district.toLowerCase().includes(q) ||
+        w.state.toLowerCase().includes(q) ||
+        w.receiptNumber.toLowerCase().includes(q) ||
+        w.borrowerName.toLowerCase().includes(q),
     );
   }
   return warehouses;
@@ -279,35 +290,68 @@ export async function getPortfolioSummary(): Promise<PortfolioSummary> {
 }
 
 export async function resetToDefaults(): Promise<PortfolioSummary> {
-  // Demo reset restores Inspector seeds but NEVER wipes farmer self-checks —
-  // QR verification links must keep resolving.
-  const data = await load();
+  // QR gov-check records survive demo resets explicitly — permanent evidence.
+  // The inspector profile is likewise preserved, not reset to blank.
+  const current = await load();
+  const preserved = Array.isArray(current.govChecks) ? current.govChecks : [];
+  const preservedProfile = current.profile ?? JSON.parse(JSON.stringify(DEMO_PROFILE));
   const seed = freshSeed();
-  seed.farmerChecks = data.farmerChecks ?? [];
+  seed.govChecks = preserved;
+  seed.profile = preservedProfile;
   await save(seed);
   return getPortfolioSummary();
 }
 
-// ---- Farmer self-checks (namespaced; read-only for Inspectors) ----
-
-export async function addFarmerCheck(check: FarmerCheck): Promise<FarmerCheck> {
+export async function getProfile(): Promise<InspectorProfile | null> {
   const data = await load();
-  data.farmerChecks = [check, ...(data.farmerChecks ?? [])];
+  return data.profile || null;
+}
+
+/** Merge, do not replace: the bank and government branches are one record. */
+export async function saveProfile(profile: InspectorProfile): Promise<InspectorProfile> {
+  const data = await load();
+  const previous = data.profile || undefined;
+  const clean: InspectorProfile = {
+    inspectorType: profile.inspectorType === 'government' ? 'government' : 'bank',
+    displayName:
+      typeof profile.displayName === 'string' && profile.displayName.trim()
+        ? profile.displayName.slice(0, 120)
+        : previous?.displayName,
+    bank: mergeProfileBranch(previous?.bank, profile.bank),
+    gov: mergeProfileBranch(previous?.gov, profile.gov),
+    updatedAt: new Date().toISOString(),
+  };
+  data.profile = clean;
   await save(data);
-  return check;
+  return clean;
 }
 
-export async function getFarmerCheckById(id: string): Promise<FarmerCheck | undefined> {
+export async function addGovCheck(record: GovCheck): Promise<GovCheck> {
   const data = await load();
-  return (data.farmerChecks ?? []).find((c) => c.id === id);
+  if (!Array.isArray(data.govChecks)) data.govChecks = [];
+  data.govChecks.unshift(record);
+  await save(data);
+  return record;
 }
 
-/** Read-only farmer history, exact name match (case-insensitive). */
-export async function getFarmerChecksByFarmer(name: string): Promise<FarmerCheck[]> {
-  const needle = name.trim().toLowerCase();
-  if (!needle) return [];
+export async function getGovCheckById(id: string): Promise<GovCheck | undefined> {
   const data = await load();
-  return (data.farmerChecks ?? [])
-    .filter((c) => c.farmerName.trim().toLowerCase() === needle)
+  return (data.govChecks || []).find((g) => g.id === id);
+}
+
+/** All QR records minted for one verification (newest first). */
+export async function getGovChecksByVerification(verificationId: string): Promise<GovCheck[]> {
+  const data = await load();
+  return (data.govChecks || [])
+    .filter((g) => g.verificationId === verificationId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+/** Read-only history for official lookups — case-insensitive inspector-name match. */
+export async function getGovChecksByOfficial(name: string): Promise<GovCheck[]> {
+  const data = await load();
+  const q = name.trim().toLowerCase();
+  return (data.govChecks || [])
+    .filter((g) => g.inspectorName.toLowerCase().includes(q))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }

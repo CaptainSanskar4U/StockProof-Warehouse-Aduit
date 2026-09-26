@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import type { CompactionLevel, GrainType, Season } from '../../types.js';
+import type { AgentType, CompactionLevel, GrainType, GovScheme, Season } from '../../types.js';
 import {
   evaluatePhotoQuality,
   laplacianVariance,
@@ -102,6 +102,20 @@ interface SharedAudit {
   setDeclaredTouched: (v: boolean) => void;
   priceText: string;
   setPriceText: (v: string) => void;
+  agentType: AgentType;
+  setAgentType: (v: AgentType) => void;
+  farmerName: string;
+  setFarmerName: (v: string) => void;
+  loanRef: string;
+  setLoanRef: (v: string) => void;
+  bankWarehouseName: string;
+  setBankWarehouseName: (v: string) => void;
+  govWarehouseRef: string;
+  setGovWarehouseRef: (v: string) => void;
+  govRegion: string;
+  setGovRegion: (v: string) => void;
+  govScheme: GovScheme;
+  setGovScheme: (v: GovScheme) => void;
 }
 
 const Ctx = createContext<SharedAudit | null>(null);
@@ -124,6 +138,13 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
   const [declaredText, setDeclaredText] = useState('');
   const [declaredTouched, setDeclaredTouched] = useState(false);
   const [priceText, setPriceText] = useState('');
+  const [agentType, setAgentType] = useState<AgentType>('bank');
+  const [farmerName, setFarmerName] = useState('');
+  const [loanRef, setLoanRef] = useState('');
+  const [bankWarehouseName, setBankWarehouseName] = useState('');
+  const [govWarehouseRef, setGovWarehouseRef] = useState('');
+  const [govRegion, setGovRegion] = useState('');
+  const [govScheme, setGovScheme] = useState<GovScheme>('Public Distribution System');
 
   const refreshPhotoGate = useCallback(async (p: PhotoState) => {
     const blur = await measureBlurVariance(p.dataUrl);
@@ -209,11 +230,15 @@ export function SharedAuditProvider({ children }: { children: React.ReactNode })
       compaction, setCompaction, storageDays, setStorageDays,
       declaredText, setDeclaredText, declaredTouched, setDeclaredTouched,
       priceText, setPriceText,
+      agentType, setAgentType,
+      farmerName, setFarmerName, loanRef, setLoanRef, bankWarehouseName, setBankWarehouseName,
+      govWarehouseRef, setGovWarehouseRef, govRegion, setGovRegion, govScheme, setGovScheme,
     }),
     [photo, photoQuality, clearPhoto, refreshPhotoGate,
       detectPrimary, detectCross, detectPending, runDetection,
       heightMeters, baseDiameterMeters, grainType, season, humidityPercent,
-      compaction, storageDays, declaredText, declaredTouched, priceText, setPhoto],
+      compaction, storageDays, declaredText, declaredTouched, priceText, setPhoto,
+      agentType, farmerName, loanRef, bankWarehouseName, govWarehouseRef, govRegion, govScheme],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

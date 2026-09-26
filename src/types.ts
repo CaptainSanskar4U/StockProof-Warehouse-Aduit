@@ -69,6 +69,60 @@ export interface Warehouse {
   pilePhotoUrl?: string;
 }
 
+export type AgentType = 'bank' | 'government';
+
+export type GovScheme = 'Public Distribution System' | 'Buffer Stock' | 'Other';
+
+export interface BankAuditFields {
+  farmerName?: string;
+  loanRef?: string;
+  warehouseName?: string;
+}
+
+export interface GovAuditFields {
+  warehouseRef?: string;
+  region?: string;
+  scheme?: GovScheme;
+}
+
+export interface PhotoVerdictFinding {
+  label: string;
+  probability_ai: number;
+  probability_real: number;
+  confidence: number;
+  raw_score: number;
+  backend: string;
+  filename?: string;
+}
+
+/** Photo-authenticity verdict, stored explicitly — never merged into match. */
+export type PhotoAuthenticity = 'real' | 'ai' | 'inconclusive' | 'unchecked';
+
+/**
+ * Server-stored QR record. The QR points here — never to a file.
+ * match: boolean | null, where null = UNVERIFIED.
+ * No phone numbers, ever.
+ */
+export interface GovCheck {
+  id: string;
+  createdAt: string;
+  inspectorName: string;
+  location: string;
+  storageName?: string;
+  declaredTonnes: number;
+  estCentral: number;
+  estLow: number;
+  estHigh: number;
+  volumeM3: number;
+  match: boolean | null;
+  authenticity: PhotoAuthenticity;
+  checkerNote?: string;
+  photoDataUrl?: string;
+  verificationId?: string;
+  agentType?: AgentType;
+  scheme?: GovScheme;
+}
+
 export interface Verification {
   id: string;
   warehouseId: string;
@@ -78,6 +132,13 @@ export interface Verification {
   referenceScale?: string;
   receiptPhotoUrl?: string;
   declaredSource?: 'registry' | 'manual';
+  agentType?: AgentType;
+  bank?: BankAuditFields;
+  gov?: GovAuditFields;
+  photoVerdict?: {
+    primary?: PhotoVerdictFinding | null;
+    cross?: PhotoVerdictFinding | null;
+  };
   geometry: GeometryInputs;
   context: ContextInputs;
   estimate: {
@@ -118,7 +179,7 @@ export interface ReviewItem {
   notes: string[];
   createdAt: string;
   resolvedAt?: string;
-  resolutionType?: 'stock_confirmed_physical' | 'shortfall_verified' | 're_audit_ordered' | 'false_positive_recalculated' | 'weighbridge_slips_verified';
+  resolutionType?: 'stock_confirmed_physical' | 'shortfall_verified' | 're_audit_ordered' | 'false_positive_recalculated';
 }
 
 export interface PortfolioSummary {
@@ -144,34 +205,39 @@ export interface UserProfile {
   badge: string;
 }
 
-/** Photo-authenticity verdict from the AI-image detectors. Stored explicitly —
- *  'unchecked' (checker unreachable) is never silently merged into 'real'. */
-export type PhotoVerdict = 'real' | 'ai' | 'inconclusive' | 'unchecked';
+export type InspectorType = 'bank' | 'government';
 
-/**
- * Farmer self-check — namespaced store, separate from the Inspector's
- * verifications registry. Written by the Farmer Panel, verified by QR.
- * Read-only for Inspectors (farmer-history lookup only).
- */
-export interface FarmerCheck {
-  id: string; // fc-<random>, unique per audit, never reused
-  createdAt: string; // ISO timestamp
-  farmerName: string;
-  storageName: string;
-  /** Village + district snapshot (public verification shows this, never phone). */
-  location: string;
-  grainType: GrainType;
-  grainName: string;
-  declaredTonnes: number;
-  estCentral: number;
-  estLow: number;
-  estHigh: number;
-  volumeM3: number;
-  /** null = UNVERIFIED (photo not confirmed genuine) */
-  match: boolean | null;
-  photoVerdict: PhotoVerdict;
-  checkerNote: string | null;
-  photoDataUrl: string | null;
-  heightM: number;
-  diameterM: number;
+export interface InspectorBankProfile {
+  bankName?: string;
+  employeeName?: string;
+  employeeId?: string;
+  idCardDetails?: string;
+  contact?: string;
+  email?: string;
+  region?: string;
+  photoDataUrl?: string;
+  documentDataUrl?: string;
+  documentName?: string;
+}
+
+export interface InspectorGovProfile {
+  department?: string;
+  inspectorName?: string;
+  govId?: string;
+  designation?: string;
+  cardDetails?: string;
+  contact?: string;
+  email?: string;
+  region?: string;
+  photoDataUrl?: string;
+  documentDataUrl?: string;
+  documentName?: string;
+}
+
+export interface InspectorProfile {
+  inspectorType: InspectorType;
+  displayName?: string;
+  bank?: InspectorBankProfile;
+  gov?: InspectorGovProfile;
+  updatedAt?: string;
 }

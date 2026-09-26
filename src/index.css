@@ -33,6 +33,146 @@
   --color-clay: #9C4A42;
 }
 
+/* ---------- Inspector Panel theme tokens ----------
+   Light: warm editorial paper. Dark: its own design — deep espresso,
+   parchment ink, bronze accents. Never an inversion. */
+:root {
+  color-scheme: light;
+  --paper: #F6F1E7;
+  --paper-soft: #FAF8F3;
+  --sheet: #FFFEFA;
+  --sheet-translucent: rgba(255, 254, 250, 0.95);
+  --well: #EFE7D4;
+  --tint: #FAF5EB;
+  --ink: #2A2118;
+  --ink-rgb: 42, 33, 24;
+  --ink-2: #3D3226;
+  --ink-inverse: #F6F1E7;
+  --on-inverse: rgba(246, 241, 231, 0.72);
+  --on-inverse-dim: rgba(246, 241, 231, 0.58);
+  --oncard-gold: #E8C86A;
+  --wash-strong: rgba(42, 33, 24, 0.1);
+  --ink-hover: #3A2E20;
+  --ink-soft: #6B5F4F;
+  --ink-faint: #8A7D68;
+  --hairline: rgba(42, 33, 24, 0.12);
+  --hairline-soft: rgba(42, 33, 24, 0.08);
+  --hairline-strong: rgba(42, 33, 24, 0.22);
+  --wash: rgba(42, 33, 24, 0.05);
+  --gold: #B98A2E;
+  --gold-deep: #A87F2A;
+  --gold-bright: #D9A441;
+  --gold-pale: #E8C86A;
+  --gold-ink: #7A5A1A;
+  --gold-ink-deep: #5A3E0A;
+  --gold-line: rgba(185, 138, 46, 0.4);
+  --gold-wash: rgba(185, 138, 46, 0.1);
+  --gold-ring: rgba(185, 138, 46, 0.22);
+  --gold-tint-bg: #FAF5EB;
+  --moss: #4A6B4F;
+  --moss-solid: #4A6B4F;
+  --on-moss: #FFFFFF;
+  --clay: #9C4A42;
+  --clay-solid: #9C4A42;
+  --on-clay: #FFF7F5;
+  --danger: #B5574F;
+  --danger-bg: #F9E9E7;
+  --danger-ink: #8F3A33;
+  --danger-line: rgba(181, 87, 79, 0.35);
+  --success-bg: #EDF4EE;
+  --success-ink: #2F5D3A;
+  --success-line: rgba(74, 107, 79, 0.35);
+  --warn-bg: #FDF6E4;
+  --warn-ink: #7A5A1A;
+  --warn-line: rgba(185, 138, 46, 0.4);
+  --matte: #221A12;
+  --overlay: rgba(42, 33, 24, 0.6);
+  --overlay-soft: rgba(42, 33, 24, 0.4);
+  --oncard: rgba(246, 241, 231, 0.72);
+  --oncard-dim: rgba(246, 241, 231, 0.6);
+  --oncard-faint: rgba(246, 241, 231, 0.45);
+  --oncard-line: rgba(246, 241, 231, 0.28);
+  --oncard-wash: rgba(246, 241, 231, 0.1);
+  --card-ink-bg: #2A2118;
+  --select-wash: rgba(217, 164, 65, 0.3);
+  --scrollbar-track: #FAF8F3;
+  --scrollbar-thumb: #D8D2C4;
+  --paper-dot: rgba(42, 33, 24, 0.045);
+  --sheet-shadow: 0 1px 2px rgba(42, 33, 24, 0.06), 0 12px 32px -16px rgba(42, 33, 24, 0.18);
+  --pill-shadow: 0 8px 24px -8px rgba(42, 33, 24, 0.5);
+}
+
+body.dark-mode {
+  color-scheme: dark;
+  --paper: #1B1815;
+  --paper-soft: #1E1A15;
+  --sheet: #23201B;
+  --sheet-translucent: rgba(35, 32, 27, 0.94);
+  --well: #292420;
+  --tint: #221D15;
+  --ink: #E4DCC8;
+  --ink-rgb: 228, 220, 200;
+  --ink-2: #CFC2A8;
+  --ink-inverse: #171310;
+  --on-inverse: rgba(23, 19, 16, 0.72);
+  --on-inverse-dim: rgba(23, 19, 16, 0.56);
+  --oncard-gold: #8A6A2E;
+  --wash-strong: rgba(228, 220, 200, 0.09);
+  --ink-hover: #EFE7D3;
+  --ink-soft: #9D9080;
+  --ink-faint: #756A5D;
+  --hairline: rgba(228, 220, 200, 0.1);
+  --hairline-soft: rgba(228, 220, 200, 0.06);
+  --hairline-strong: rgba(228, 220, 200, 0.2);
+  --wash: rgba(228, 220, 200, 0.045);
+  --gold: #B08A3E;
+  --gold-deep: #9A7838;
+  --gold-bright: #C49A4B;
+  --gold-pale: #D6B46A;
+  --gold-ink: #C2A061;
+  --gold-ink-deep: #A9884E;
+  --gold-line: rgba(176, 138, 62, 0.38);
+  --gold-wash: rgba(176, 138, 62, 0.09);
+  --gold-ring: rgba(176, 138, 62, 0.25);
+  --gold-tint-bg: #211B12;
+  --moss: #6E8A70;
+  --moss-solid: #3A4A3C;
+  --on-moss: #E8ECE4;
+  --clay: #A87A6A;
+  --clay-solid: #5A3A32;
+  --on-clay: #F0E4DE;
+  --danger: #B07167;
+  --danger-bg: #251715;
+  --danger-ink: #C48F85;
+  --danger-line: rgba(176, 113, 103, 0.4);
+  --success-bg: #1C231C;
+  --success-ink: #93A88E;
+  --success-line: rgba(110, 138, 112, 0.38);
+  --warn-bg: #221C11;
+  --warn-ink: #B99B5E;
+  --warn-line: rgba(176, 138, 62, 0.38);
+  --matte: #12100D;
+  --overlay: rgba(10, 8, 6, 0.62);
+  --overlay-soft: rgba(10, 8, 6, 0.46);
+  --oncard: rgba(246, 241, 231, 0.72);
+  --oncard-dim: rgba(246, 241, 231, 0.6);
+  --oncard-faint: rgba(246, 241, 231, 0.45);
+  --oncard-line: rgba(246, 241, 231, 0.28);
+  --oncard-wash: rgba(246, 241, 231, 0.1);
+  --card-ink-bg: #0E0C09;
+  --select-wash: rgba(217, 164, 65, 0.3);
+  --scrollbar-track: #1B1815;
+  --scrollbar-thumb: #38322A;
+  --paper-dot: rgba(0, 0, 0, 0);
+  --sheet-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --pill-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Dark is flat — no paper grain, depth from edges only */
+body.dark-mode .washi-page {
+  background-image: none;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -46,36 +186,46 @@ html, body, #root {
 
 body {
   font-family: var(--font-sans);
-  background-color: #F6F1E7;
-  color: #2A2118;
+  background-color: var(--paper);
+  color: var(--ink);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Simple 0.3s theme crossfade on the surfaces that paint the page */
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  .washi-page,
+  .washi-sheet,
+  .washi-well {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  }
 }
 
 /* Washi paper — barely-there grain, no gradients, no noise-for-noise sake */
 .washi-page {
-  background-color: #F6F1E7;
-  background-image: radial-gradient(rgba(42, 33, 24, 0.045) 1px, transparent 1px);
+  background-color: var(--paper);
+  background-image: radial-gradient(var(--paper-dot) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 .washi-sheet {
-  background: #FFFEFA;
-  border: 1px solid rgba(42, 33, 24, 0.12);
+  background: var(--sheet);
+  border: 1px solid var(--hairline);
   border-radius: 14px;
-  box-shadow: 0 1px 2px rgba(42, 33, 24, 0.06), 0 12px 32px -16px rgba(42, 33, 24, 0.18);
+  box-shadow: var(--sheet-shadow);
 }
 .washi-well {
-  background: #EFE7D4;
-  border: 1px solid rgba(42, 33, 24, 0.1);
+  background: var(--well);
+  border: 1px solid var(--hairline-soft);
   border-radius: 10px;
 }
 .hairline {
-  border-color: rgba(42, 33, 24, 0.12);
+  border-color: var(--hairline);
 }
 .eyebrow-quiet {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
-  color: #6B5F4F;
+  color: var(--ink-soft);
 }
 .serif-reading {
   font-family: "Instrument Serif", serif;
@@ -91,7 +241,7 @@ input[type="range"].washi-range {
   width: 100%;
   height: 2px;
   border-radius: 999px;
-  background: rgba(42, 33, 24, 0.16);
+  background: var(--hairline-strong);
   outline-offset: 6px;
   cursor: pointer;
 }
@@ -101,22 +251,22 @@ input[type="range"].washi-range::-webkit-slider-thumb {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: #FFFEFA;
-  border: 1.5px solid #2A2118;
-  box-shadow: 0 1px 4px rgba(42, 33, 24, 0.25);
+  background: var(--sheet);
+  border: 1.5px solid var(--ink);
+  box-shadow: 0 1px 4px rgba(var(--ink-rgb), 0.25);
 }
 input[type="range"].washi-range::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: #FFFEFA;
-  border: 1.5px solid #2A2118;
-  box-shadow: 0 1px 4px rgba(42, 33, 24, 0.25);
+  background: var(--sheet);
+  border: 1.5px solid var(--ink);
+  box-shadow: 0 1px 4px rgba(var(--ink-rgb), 0.25);
 }
 input[type="range"].washi-range::-moz-range-track {
   height: 2px;
   border-radius: 999px;
-  background: rgba(42, 33, 24, 0.16);
+  background: var(--hairline-strong);
 }
 
 /* Ceremonial transitions */
@@ -162,20 +312,20 @@ input[type="range"].washi-range::-moz-range-track {
   font-family: var(--font-mono);
 }
 
-/* Custom scrollbar — light editorial */
+/* Custom scrollbar — quiet editorial, both themes */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #FAF8F3;
+  background: var(--scrollbar-track);
 }
 ::-webkit-scrollbar-thumb {
-  background: #D8D2C4;
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #B98A2E;
+  background: var(--gold);
 }
 
 /* ---- Landing motion system (human-built, no AI-slop gradients) ---- */
@@ -263,13 +413,83 @@ html.lenis, html.lenis body {
 
 /* ---- Production polish: visible keyboard focus, gold ring ---- */
 :focus-visible {
-  outline: 2px solid #B98A2E;
+  outline: 2px solid var(--gold);
   outline-offset: 3px;
   border-radius: 6px;
+}
+
+/* Calm text selection in both themes */
+::selection {
+  background: var(--select-wash);
+  color: var(--ink);
 }
 @media (prefers-reduced-motion: reduce) {
   html.lenis, .lenis.lenis-smooth { scroll-behavior: auto; }
   .lenis { scroll-behavior: auto; }
   .animate-marquee { animation: none; }
   .animate-fade-in-up { animation: none; opacity: 1; }
+}
+
+/* ============================================================================
+   PRINT — official inspection report
+   The report owns the whole page: everything else is hidden, and only
+   .print-doc is allowed to paint. Colours are forced to print so a safety
+   warning can never silently vanish onto blank paper.
+   ========================================================================== */
+@page {
+  size: A4 portrait;
+  margin: 14mm 14mm 16mm;
+}
+
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #1a1a1a !important;
+  }
+
+  /* Force background/border colours to actually print. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-doc,
+  .print-doc * {
+    visibility: visible !important;
+  }
+
+  .print-doc {
+    position: absolute !important;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+  }
+
+  /* Screen-only furniture never reaches paper. */
+  .no-print { display: none !important; }
+
+  /* Keep a section (and especially the stamp box) on one page. */
+  .print-keep { break-inside: avoid; page-break-inside: avoid; }
+  .print-keep-after { break-after: avoid; page-break-after: avoid; }
+
+  /* Keep a table header repeated at the top of each printed page. */
+  .print-repeat-head { display: table-header-group; }
+  .print-repeat-foot { display: table-footer-group; }
+
+  tr, .print-row { break-inside: avoid; page-break-inside: avoid; }
+  thead { display: table-header-group; }
+
+  a { color: #1a1a1a !important; text-decoration: none; }
+  a[href]::after { content: ""; }
 }

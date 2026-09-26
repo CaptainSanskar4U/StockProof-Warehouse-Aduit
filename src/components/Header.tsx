@@ -1,61 +1,41 @@
 import React from 'react';
-import { UserRole, UserProfile } from '../types.js';
-import { ShieldCheck, UserCheck, AlertOctagon, HelpCircle, RotateCcw, FileSpreadsheet } from 'lucide-react';
+import { ShieldCheck, HelpCircle, FileSpreadsheet, UserRound } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle.js';
+import type { Theme } from '../hooks/useTheme.js';
+
+export type HeaderView = 'overview' | 'dashboard' | 'reviews' | 'reports' | 'profile';
 
 interface HeaderProps {
-  currentRole: UserRole;
-  onSelectRole: (role: UserRole) => void;
   openReviewCount: number;
-  currentView: 'overview' | 'dashboard' | 'reviews' | 'reports';
-  onNavigate: (view: 'overview' | 'dashboard' | 'reviews' | 'reports') => void;
+  currentView: HeaderView;
+  onNavigate: (view: HeaderView) => void;
   onOpenPhysics: () => void;
-  onResetDemo: () => void;
+  theme: Theme;
+  onToggleTheme: () => void;
 }
 
-export const USERS: Record<UserRole, UserProfile> = {
-  auditor: {
-    id: 'aud-01',
-    name: 'Priya Sharma',
-    role: 'auditor',
-    designation: 'Senior Commodity Field Inspector',
-    organization: 'Apex Agri Audit Services',
-    badge: 'FIELD AUDITOR',
-  },
-  risk_officer: {
-    id: 'ro-101',
-    name: 'Arjun Mehta',
-    role: 'risk_officer',
-    designation: 'VP Agricultural Credit & Fraud Risk',
-    organization: 'National Rural Lending Consortium',
-    badge: 'RISK OFFICER',
-  },
-};
-
 export const Header: React.FC<HeaderProps> = ({
-  currentRole,
-  onSelectRole,
   openReviewCount,
   currentView,
   onNavigate,
   onOpenPhysics,
-  onResetDemo,
+  theme,
+  onToggleTheme,
 }) => {
-  const activeUser = USERS[currentRole];
-
   const tabClass = (active: boolean) =>
-    `px-3 py-1.5 rounded-full text-xs font-mono tracking-wider transition-colors cursor-pointer ${
+    `px-4 py-2 rounded-full text-[13px] font-mono tracking-wider transition-colors cursor-pointer ${
       active
-        ? 'bg-[#2B2016] text-white'
-        : 'text-[#2B2016]/55 hover:text-[#3D3226]'
+        ? 'bg-[var(--ink)] text-[var(--ink-inverse)] font-bold'
+        : 'text-[var(--ink-soft)] hover:text-[var(--ink-2)]'
     }`;
 
   return (
-    <header className="bg-white/95 backdrop-blur border-b border-[#3D3226]/10 sticky top-0 z-40">
+    <header className="bg-[var(--sheet-translucent)] backdrop-blur border-b border-[var(--hairline)] sticky top-0 z-40">
       {/* Top Banner: The Golden Rule mandated in Section 2 */}
-      <div className="bg-[#FAF5EB] border-b border-[#B98A2E]/25 px-4 py-1.5 flex items-center justify-between text-[11px] font-mono">
-        <div className="flex items-center gap-2 text-[#2B2016]/60 truncate">
-          <ShieldCheck className="w-3.5 h-3.5 text-[#B98A2E] shrink-0" />
-          <span className="text-[#3D3226] font-medium">
+      <div className="bg-[var(--gold-tint-bg)] border-b border-[var(--gold-line)] px-4 py-1.5 flex items-center justify-between text-[11px] font-mono">
+        <div className="flex items-center gap-2 text-[var(--ink-soft)] truncate">
+          <ShieldCheck className="w-3.5 h-3.5 text-[var(--gold)] shrink-0" />
+          <span className="text-[var(--ink-2)] font-medium">
             GOLDEN RULE:
           </span>
           <span className="truncate">
@@ -65,51 +45,42 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={onOpenPhysics}
-            className="text-[#B98A2E] hover:underline flex items-center gap-1 cursor-pointer"
+            className="text-[var(--gold)] hover:underline flex items-center gap-1 cursor-pointer"
           >
             <HelpCircle className="w-3 h-3" />
             <span className="hidden sm:inline">Defensible Formula</span>
-          </button>
-          <span className="text-[#3D3226]/15">|</span>
-          <button
-            onClick={onResetDemo}
-            className="text-[#2B2016]/55 hover:text-[#3D3226] flex items-center gap-1 cursor-pointer"
-            title="Reset database to demo seed data"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span className="hidden sm:inline">Reset Demo</span>
           </button>
         </div>
       </div>
 
       {/* Main Header Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
         {/* Brand identity */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <div
             onClick={() => onNavigate('dashboard')}
-            className="flex items-center gap-2.5 cursor-pointer group"
+            className="flex items-center gap-3 cursor-pointer group"
           >
-            <div className="w-8 h-8 rounded-full bg-[#2B2016] text-white flex items-center justify-center font-instrument-serif italic text-xl shadow-md">
+            <div className="w-11 h-11 rounded-full bg-[var(--ink)] text-[var(--ink-inverse)] flex items-center justify-center font-instrument-serif italic text-2xl shadow-md">
               S
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-instrument-serif tracking-tight text-[#3D3226] group-hover:text-[#B98A2E] transition-colors">
-                  Stockproof
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl font-instrument-serif tracking-tight text-[var(--ink-2)] group-hover:text-[var(--gold)] transition-colors">
+                  Inspector Panel
                 </span>
-                <span className="text-[10px] font-mono tracking-widest px-1.5 py-0.5 rounded-full bg-[#3D3226]/5 text-[#B98A2E] border border-[#B98A2E]/30 uppercase">
+                <span className="text-[10px] font-mono tracking-widest px-2 py-0.5 rounded-full bg-[var(--wash)] text-[var(--gold)] border border-[var(--gold-line)] uppercase">
                   VERIFY v2.4
                 </span>
               </div>
-              <p className="text-[10px] font-mono text-[#2B2016]/50 -mt-0.5">
-                Grain Stock Verification & Risk Engine
+              <p className="text-[11px] font-mono text-[var(--ink-soft)] mt-0.5">
+                StockProof Inspector Panel · Grain Stock Verification
               </p>
             </div>
           </div>
 
           {/* Navigation tabs */}
-          <nav className="hidden md:flex items-center gap-1 ml-6 pl-6 border-l border-[#3D3226]/10">
+          <nav className="hidden md:flex items-center gap-1.5 ml-8 pl-8 border-l border-[var(--hairline)]">
             <button
               onClick={() => onNavigate('overview')}
               className={tabClass(currentView === 'overview')}
@@ -120,15 +91,15 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => onNavigate('dashboard')}
               className={tabClass(currentView === 'dashboard')}
             >
-              WAREHOUSES
+              INSPECTOR PANEL
             </button>
             <button
               onClick={() => onNavigate('reviews')}
               className={`${tabClass(currentView === 'reviews')} flex items-center gap-1.5`}
             >
-              <span>REVIEW QUEUE</span>
+              <span>BANK CHECKS</span>
               {openReviewCount > 0 && (
-                <span className="bg-[#B5574F] text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                <span className="bg-[var(--danger)] text-[var(--ink-inverse)] text-[10px] font-bold px-1.5 py-0.2 rounded-full">
                   {openReviewCount}
                 </span>
               )}
@@ -140,75 +111,58 @@ export const Header: React.FC<HeaderProps> = ({
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>AUDIT REPORT</span>
             </button>
+            <button
+              onClick={() => onNavigate('profile')}
+              className={`${tabClass(currentView === 'profile')} flex items-center gap-1.5`}
+            >
+              <UserRound className="w-3.5 h-3.5" />
+              <span>PROFILE</span>
+            </button>
           </nav>
         </div>
 
-        {/* Role Switcher */}
-        <div className="flex items-center gap-3 ml-auto">
-          {/* Active persona pill */}
-          <div className="hidden lg:flex flex-col items-end text-right">
-            <span className="text-xs font-medium text-[#3D3226]">{activeUser.name}</span>
-            <span className="text-[10px] font-mono text-[#2B2016]/50">{activeUser.designation}</span>
-          </div>
-
-          {/* Role selector segmented control */}
-          <div className="bg-[#F5F0E8] border border-[#3D3226]/10 rounded-full p-1 flex items-center gap-1 text-xs font-mono">
-            <button
-              onClick={() => onSelectRole('auditor')}
-              className={`px-2.5 py-1 rounded-full transition-colors flex items-center gap-1.5 ${
-                currentRole === 'auditor'
-                  ? 'bg-[#2B2016] text-white font-bold shadow-xs'
-                  : 'text-[#2B2016]/55 hover:text-[#3D3226]'
-              }`}
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span>FIELD AUDITOR</span>
-            </button>
-            <button
-              onClick={() => onSelectRole('risk_officer')}
-              className={`px-2.5 py-1 rounded-full transition-colors flex items-center gap-1.5 ${
-                currentRole === 'risk_officer'
-                  ? 'bg-[#2B2016] text-white font-bold shadow-xs'
-                  : 'text-[#2B2016]/55 hover:text-[#3D3226]'
-              }`}
-            >
-              <AlertOctagon className="w-3.5 h-3.5" />
-              <span>RISK OFFICER</span>
-            </button>
-          </div>
+        {/* Theme control */}
+        <div className="flex items-center ml-auto">
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
       </div>
 
       {/* Mobile nav bar */}
-      <div className="safe-bottom flex md:hidden border-t border-[#3D3226]/10 bg-white px-2 pt-1.5 justify-around text-xs font-mono">
+      <div className="safe-bottom flex md:hidden border-t border-[var(--hairline)] bg-[var(--sheet)] px-2 pt-1.5 justify-around text-xs font-mono">
         <button
           onClick={() => onNavigate('overview')}
-          className={`touch-target py-2 px-3 ${currentView === 'overview' ? 'text-[#B98A2E] font-bold' : 'text-[#2B2016]/55'}`}
+          className={`touch-target py-2 px-3 ${currentView === 'overview' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
         >
           OVERVIEW
         </button>
         <button
           onClick={() => onNavigate('dashboard')}
-          className={`touch-target py-2 px-3 ${currentView === 'dashboard' ? 'text-[#B98A2E] font-bold' : 'text-[#2B2016]/55'}`}
+          className={`touch-target py-2 px-3 ${currentView === 'dashboard' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
         >
-          WAREHOUSES
+          PANEL
         </button>
         <button
           onClick={() => onNavigate('reviews')}
-          className={`touch-target py-2 px-3 flex items-center gap-1 ${currentView === 'reviews' ? 'text-[#B98A2E] font-bold' : 'text-[#2B2016]/55'}`}
+          className={`touch-target py-2 px-3 flex items-center gap-1 ${currentView === 'reviews' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
         >
-          <span>REVIEWS</span>
+          <span>BANK CHECKS</span>
           {openReviewCount > 0 && (
-            <span className="bg-[#B5574F] text-white text-[9px] px-1 rounded-full">
+            <span className="bg-[var(--danger)] text-[var(--ink-inverse)] text-[9px] px-1 rounded-full">
               {openReviewCount}
             </span>
           )}
         </button>
         <button
           onClick={() => onNavigate('reports')}
-          className={`touch-target py-2 px-3 ${currentView === 'reports' ? 'text-[#B98A2E] font-bold' : 'text-[#2B2016]/55'}`}
+          className={`touch-target py-2 px-3 ${currentView === 'reports' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
         >
           REPORT
+        </button>
+        <button
+          onClick={() => onNavigate('profile')}
+          className={`touch-target py-2 px-3 ${currentView === 'profile' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
+        >
+          PROFILE
         </button>
       </div>
     </header>
