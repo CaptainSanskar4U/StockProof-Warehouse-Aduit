@@ -31,11 +31,36 @@ import { RecordDetailModal } from './components/RecordDetailModal.js';
 import { ReportExportModal } from './components/ReportExportModal.js';
 import { PhysicsModal } from './components/PhysicsModal.js';
 import { LandingPageView } from './components/LandingPageView.js';
+import { LoginModal, LoginRole } from './components/LoginModal.js';
+import { FarmerPanel } from './panels/FarmerPanel.js';
 import { CheckCircle2, AlertOctagon, Info } from 'lucide-react';
+
+const AUTH_KEY = 'stockproof_auth';
+
+function getStoredRole(): LoginRole | null {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { role?: unknown };
+    return parsed.role === 'farmer' || parsed.role === 'inspector' ? parsed.role : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function App() {
   // Navigation state (single inspector identity comes from the saved Profile)
   const [currentView, setCurrentView] = useState<HeaderView>('overview');
+
+  // --- Role gate ---------------------------------------------------------
+  // Two panels behind one login. The role is remembered, but clicking
+  // "Console" always asks again — the first click of a demo must never
+  // silently drop someone into the wrong panel.
+  const [role, setRole] = useState<LoginRole | null>(null);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isConsoleLocked, setIsConsoleLocked] = useState(false);
+  const [pendingView, setPendingView] = useState<HeaderView | null>(null);
+  const [greeting, setGreeting] = useState<string | null>(null);
 
   // Data state
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -142,7 +167,57 @@ export default function App() {
   };
 
   const openReviewCount = reviews.filter((r) => r.status === 'open').length;
-  const isLanding = !activeVerificationWarehouse && currentView === 'overview';
+  const isLanding = !activeVerificationWarehouse && currentView === 'overview' && role !== 'farmer';
+
+  // --- Role handlers -----------------------------------------------------
+  // Landing CTA -> remember where they were headed, lock the console, ask who
+  // they are. Farmer goes to the farmer panel; Inspector reveals this page.
+  const handleEnterConsole = useCallback((view: HeaderView = 'dashboard') => {
+    setPendingView(view);
+    setIsLoginOpen(true);
+    setIsConsoleLocked(true);
+  }, []);
+
+  const handleLoginSuccess = useCallback((profile: { role: LoginRole; email: string }) => {
+    setRole(profile.role);
+    setIsLoginOpen(false);
+    setIsConsoleLocked(false);
+    setGreeting(`Welcome${profile.email ? ` ${profile.email}` : ''} — signed in as ${profile.role}.`);
+    if (profile.role === 'farmer') return; // the farmer panel owns its own nav
+    if (pendingView) setCurrentView(pendingView);
+    else if (currentView === 'overview') setCurrentView('dashboard');
+  }, [pendingView, currentView]);
+
+  // Locked mode: no peeking at the panel. Backing out returns to the landing.
+  const handleLoginClose = useCallback(() => {
+    setIsLoginOpen(false);
+    setIsConsoleLocked(false);
+    setPendingView(null);
+    if (!role) {
+      setCurrentView('overview');
+      setActiveVerificationWarehouse(null);
+      setSelectedRecord(null);
+    }
+  }, [role]);
+
+  // Always available: a returning visitor can change panel without clearing
+  // localStorage by hand.
+  const handleSwitchRole = useCallback(() => {
+    try {
+      localStorage.removeItem(AUTH_KEY);
+    } catch {
+      /* ignore */
+    }
+    setRole(null);
+    setIsLoginOpen(false);
+    setIsConsoleLocked(false);
+    setPendingView(null);
+    setCurrentView('overview');
+    setActiveVerificationWarehouse(null);
+    setSelectedRecord(null);
+    setSelectedWarehouseForDetail(null);
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
+  }, []);
 
   // Public verify links (?verify=<gc-id>) open a popup OVER the existing app —
   // anonymous, no login, and no separate verification page.
@@ -193,9 +268,11 @@ export default function App() {
     }
   }, []);
 
-  // Console-only theming: the marketing landing keeps its designed light look.
+  // Console-only theming: the marketing landing keeps its designed light look,
+  // and so does the farmer panel — its washi cards are a light design.
+  const prefersLight = isLanding || role === 'farmer';
   useEffect(() => {
-    if (isLanding) {
+    if (prefersLight) {
       document.body.classList.remove('dark-mode');
       document.body.classList.add('light-mode');
       document.body.dataset.forcedTheme = 'landing';
@@ -206,14 +283,27 @@ export default function App() {
       document.body.classList.add(`${theme}-mode`);
       document.documentElement.style.colorScheme = theme;
     }
-  }, [isLanding, theme]);
+  }, [prefersLight, theme]);
 
   if (reportId) {
     return <ReportPrintView verificationId={reportId} onExit={closeReport} />;
   }
 
+  // A locked console sits behind the login popup, blurred and inert.
+  const lockClass = isConsoleLocked ? 'blur-md pointer-events-none select-none' : '';
+
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)] flex flex-col font-sans">
+      <div className={lockClass} aria-hidden={isConsoleLocked || undefined} inert={isConsoleLocked || undefined}>
+      {role === 'farmer' ? (
+        <FarmerPanel
+          greeting={greeting}
+          onGreetingShown={() => setGreeting(null)}
+          onExitToLanding={handleSwitchRole}
+          onLogout={handleSwitchRole}
+        />
+      ) : (
+      <>
       {/* Top Header with Golden Rule, Role Switcher, and Nav — hidden on marketing landing */}
       {!isLanding && (
       <>
@@ -261,18 +351,18 @@ export default function App() {
           </div>
         ) : currentView === 'overview' ? (
           <LandingPageView
-            onEnterConsole={() => setCurrentView('dashboard')}
+            onEnterConsole={() => handleEnterConsole('dashboard')}
             onStartSampleVerification={() => {
               const specimenWh = warehouses.find((w) => w.id === 'wh-001') || warehouses[0];
               if (specimenWh) {
                 setActiveVerificationWarehouse(specimenWh);
               } else {
-                setCurrentView('dashboard');
+                handleEnterConsole('dashboard');
               }
             }}
             onOpenPhysics={() => setIsPhysicsModalOpen(true)}
-            onOpenReviews={() => setCurrentView('reviews')}
-            onOpenReports={() => setIsReportModalOpen(true)}
+            onOpenReviews={() => handleEnterConsole('reviews')}
+            onOpenReports={() => handleEnterConsole('dashboard')}
           />
         ) : currentView === 'reviews' ? (
           <div className="max-w-5xl mx-auto">
@@ -305,6 +395,8 @@ export default function App() {
           />
         )}
       </main>
+      </>
+      )}
 
       {/* Warehouse Detail Modal */}
       <WarehouseDetailModal
@@ -324,6 +416,11 @@ export default function App() {
           onClose={() => setSelectedRecord(null)}
         />
       )}
+      </div>
+
+      {/* --- Root-level overlays: these must work for BOTH panels, and while the
+          console is locked. A scanned QR opens the verification popup with no
+          login and no role, which is the whole point of a public QR. --- */}
 
       {/* Public QR verification popup — opens over the app, never replaces it */}
       {verifyId && (
@@ -342,6 +439,25 @@ export default function App() {
         onClose={() => setIsReportModalOpen(false)}
         warehouses={warehouses}
         summary={summary}
+      />
+
+      {/* Panel escape hatch — without this the Inspector panel is a dead end. */}
+      {role && !isLanding && (
+        <button
+          type="button"
+          onClick={handleSwitchRole}
+          className="fixed bottom-4 right-4 z-40 px-3.5 py-2 rounded-full bg-[var(--sheet)] border border-[var(--hairline-strong)] text-[var(--ink-2)] text-[11px] font-mono shadow-[var(--sheet-shadow)] hover:border-[var(--gold)] transition-colors cursor-pointer"
+        >
+          {role === 'farmer' ? 'Switch to Inspector' : 'Switch to Farmer'}
+        </button>
+      )}
+
+      {/* Login gate — first, and again on every explicit Console click. */}
+      <LoginModal
+        isOpen={isLoginOpen}
+        dismissable={false}
+        onClose={handleLoginClose}
+        onSuccess={handleLoginSuccess}
       />
 
       {/* Floating Procedural Notification Toast */}
