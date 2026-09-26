@@ -1,16 +1,23 @@
 import React from 'react';
 import { FarmerShell } from '../farmer/FarmerShell.js';
-import type { ConsoleShellProps } from './ConsoleShell.js';
-
-type FarmerPanelProps = Omit<ConsoleShellProps, 'panel' | 'initialRole'> & {
-  onLogout: () => void;
-};
 
 /**
- * Farmer Panel — redesigned farmer experience: Audit/Camera, Records,
- * Profile. Keeps router props compatible, and the
- * Inspector Console is completely unaffected.
+ * Farmer Panel — farmer-owned experience: Audit/Camera, Records, Profile.
+ *
+ * Self-contained on purpose. It used to borrow its prop type from the old
+ * single-panel `ConsoleShell`, but that shell is gone: the Inspector page now
+ * lives in App.tsx (landed from GitHub) and the two never share a chrome.
  */
+export interface FarmerPanelProps {
+  initialView?: 'dashboard' | 'reviews';
+  autoOpenReports?: boolean;
+  autoStartSpecimen?: boolean;
+  greeting?: string | null;
+  onGreetingShown?: () => void;
+  onExitToLanding: () => void;
+  onLogout: () => void;
+}
+
 export const FarmerPanel: React.FC<FarmerPanelProps> = ({
   initialView,
   autoOpenReports,

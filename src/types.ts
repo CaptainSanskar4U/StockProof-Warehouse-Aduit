@@ -241,3 +241,37 @@ export interface InspectorProfile {
   gov?: InspectorGovProfile;
   updatedAt?: string;
 }
+
+/**
+ * Farmer self-check verdict. 'unchecked' means the detector never answered and
+ * is never merged into 'real' — an unverified photo is not a genuine photo.
+ */
+export type PhotoVerdict = 'real' | 'ai' | 'inconclusive' | 'unchecked';
+
+/**
+ * Farmer self-check — namespaced store, separate from the Inspector's
+ * verifications registry. Written by the Farmer Panel, verified by QR.
+ * Read-only for Inspectors (farmer-history lookup only).
+ */
+export interface FarmerCheck {
+  id: string; // fc-<random>, unique per audit, never reused
+  createdAt: string; // ISO timestamp
+  farmerName: string;
+  storageName: string;
+  /** Village + district snapshot (public verification shows this, never phone). */
+  location: string;
+  grainType: GrainType;
+  grainName: string;
+  declaredTonnes: number;
+  estCentral: number;
+  estLow: number;
+  estHigh: number;
+  volumeM3: number;
+  /** null = UNVERIFIED (photo not confirmed genuine) */
+  match: boolean | null;
+  photoVerdict: PhotoVerdict;
+  checkerNote: string | null;
+  photoDataUrl: string | null;
+  heightM: number;
+  diameterM: number;
+}

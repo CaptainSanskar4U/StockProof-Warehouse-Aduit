@@ -22,6 +22,7 @@ import type {
   ReviewItem,
   Verification,
   Warehouse,
+  FarmerCheck,
 } from '../src/types.js';
 
 const KEYS = {
@@ -29,6 +30,7 @@ const KEYS = {
   verifications: 'stockproof:verifications',
   reviews: 'stockproof:reviews',
   govChecks: 'stockproof:gov-checks',
+  farmerChecks: 'stockproof:farmer-checks',
   profile: 'stockproof:profile',
 } as const;
 
@@ -59,6 +61,7 @@ function freshSeed(): StorageData {
     reviews: JSON.parse(JSON.stringify(INITIAL_REVIEWS)),
     profile: JSON.parse(JSON.stringify(DEMO_PROFILE)),
     govChecks: [],
+    farmerChecks: [],
   };
 }
 
@@ -68,19 +71,29 @@ async function load(): Promise<StorageData> {
   const redis = getRedis();
   if (redis) {
     try {
-      const [warehouses, verifications, reviews, govChecks, profile] = await Promise.all([
+      const [warehouses, verifications, reviews, govChecks, farmerChecks, profile] = await Promise.all([
         redis.get<Warehouse[]>(KEYS.warehouses),
         redis.get<Verification[]>(KEYS.verifications),
         redis.get<ReviewItem[]>(KEYS.reviews),
         redis.get<GovCheck[]>(KEYS.govChecks),
+        redis.get<FarmerCheck[]>(KEYS.farmerChecks),
         redis.get<InspectorProfile>(KEYS.profile),
       ]);
       if (warehouses && verifications && reviews) {
-        return { warehouses, verifications, reviews, govChecks: govChecks || [], profile: profile || null };
+        return {
+          warehouses,
+          verifications,
+          reviews,
+          govChecks: govChecks || [],
+          // farmerChecks may predate the key - default, never reseed QR'd records.
+          farmerChecks: farmerChecks || [],
+          profile: profile || null,
+        };
       }
       const seed = freshSeed();
       // Preserve any existing QR records across reseeds.
       if (govChecks) seed.govChecks = govChecks;
+      if (farmerChecks) seed.farmerChecks = farmerChecks;
       if (profile) seed.profile = profile;
       await save(seed);
       return seed;
@@ -90,6 +103,7 @@ async function load(): Promise<StorageData> {
   }
   if (!mem) mem = freshSeed();
   if (!Array.isArray(mem.govChecks)) mem.govChecks = [];
+  if (!Array.isArray(mem.farmerChecks)) mem.farmerChecks = [];
   return mem;
 }
 
@@ -102,6 +116,7 @@ async function save(data: StorageData): Promise<void> {
         redis.set(KEYS.verifications, data.verifications),
         redis.set(KEYS.reviews, data.reviews),
         redis.set(KEYS.govChecks, data.govChecks || []),
+        redis.set(KEYS.farmerChecks, data.farmerChecks || []),
         redis.set(KEYS.profile, data.profile || null),
       ]);
       return;
@@ -294,9 +309,12 @@ export async function resetToDefaults(): Promise<PortfolioSummary> {
   // The inspector profile is likewise preserved, not reset to blank.
   const current = await load();
   const preserved = Array.isArray(current.govChecks) ? current.govChecks : [];
+  // Farmer self-checks are QR-backed too — their verify links must keep resolving.
+  const preservedFarmer = Array.isArray(current.farmerChecks) ? current.farmerChecks : [];
   const preservedProfile = current.profile ?? JSON.parse(JSON.stringify(DEMO_PROFILE));
   const seed = freshSeed();
   seed.govChecks = preserved;
+  seed.farmerChecks = preservedFarmer;
   seed.profile = preservedProfile;
   await save(seed);
   return getPortfolioSummary();
@@ -352,6 +370,31 @@ export async function getGovChecksByOfficial(name: string): Promise<GovCheck[]> 
   const data = await load();
   const q = name.trim().toLowerCase();
   return (data.govChecks || [])
-    .filter((g) => g.inspectorName.toLowerCase().includes(q))
+    .filter((g) => (g.inspectorName || '').toLowerCase().includes(q))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+// ---- Farmer self-checks (namespaced; read-only for Inspectors) ----
+
+export async function addFarmerCheck(check: FarmerCheck): Promise<FarmerCheck> {
+  const data = await load();
+  if (!Array.isArray(data.farmerChecks)) data.farmerChecks = [];
+  data.farmerChecks = [check, ...(data.farmerChecks ?? [])];
+  await save(data);
+  return check;
+}
+
+export async function getFarmerCheckById(id: string): Promise<FarmerCheck | undefined> {
+  const data = await load();
+  return (data.farmerChecks ?? []).find((c) => c.id === id);
+}
+
+/** Read-only farmer history, exact name match (case-insensitive). Never a feed. */
+export async function getFarmerChecksByFarmer(name: string): Promise<FarmerCheck[]> {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return [];
+  const data = await load();
+  return (data.farmerChecks ?? [])
+    .filter((c) => (c.farmerName || '').trim().toLowerCase() === needle)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }

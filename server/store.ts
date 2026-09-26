@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { Warehouse, Verification, ReviewItem, PortfolioSummary, GrainType, InspectorProfile, GovCheck } from '../src/types.js';
+import { Warehouse, Verification, ReviewItem, PortfolioSummary, GrainType, InspectorProfile, GovCheck, FarmerCheck } from '../src/types.js';
 
 // Vercel serverless filesystem is read-only except /tmp — use it when deployed.
 const DATA_DIR = process.env.VERCEL
@@ -183,6 +183,8 @@ export interface StorageData {
   reviews: ReviewItem[];
   profile?: InspectorProfile | null;
   govChecks?: GovCheck[];
+  /** Farmer self-checks. Namespaced — never part of Inspector queues. */
+  farmerChecks?: FarmerCheck[];
 }
 
 /**
@@ -267,6 +269,7 @@ class StorageManager {
       reviews: INITIAL_REVIEWS,
       profile: JSON.parse(JSON.stringify(DEMO_PROFILE)),
       govChecks: [],
+      farmerChecks: [],
     };
     this.saveData(defaultData);
     return defaultData;
@@ -322,10 +325,37 @@ class StorageManager {
       (parsed as StorageData).govChecks = [];
       mutated = true;
     }
+    // Farmer self-checks are QR-backed too — their ?verify= links must resolve.
+    if (!Array.isArray((parsed as StorageData).farmerChecks)) {
+      (parsed as StorageData).farmerChecks = [];
+      mutated = true;
+    }
     if (mutated) {
       this.saveData(parsed);
     }
     return parsed;
+  }
+
+  // ---- Farmer self-checks (namespaced; never part of Inspector queues) ----
+
+  public addFarmerCheck(check: FarmerCheck): FarmerCheck {
+    if (!Array.isArray(this.data.farmerChecks)) this.data.farmerChecks = [];
+    this.data.farmerChecks.unshift(check);
+    this.saveData(this.data);
+    return check;
+  }
+
+  public getFarmerCheckById(id: string): FarmerCheck | undefined {
+    return (this.data.farmerChecks || []).find((c) => c.id === id);
+  }
+
+  /** Read-only farmer history, exact name match (case-insensitive). Never a feed. */
+  public getFarmerChecksByFarmer(name: string): FarmerCheck[] {
+    const needle = name.trim().toLowerCase();
+    if (!needle) return [];
+    return (this.data.farmerChecks || [])
+      .filter((c) => (c.farmerName || '').trim().toLowerCase() === needle)
+      .sort((a, b) => (new Date(b.createdAt).getTime() || 0) - (new Date(a.createdAt).getTime() || 0));
   }
 
   public addGovCheck(record: GovCheck): GovCheck {
@@ -539,12 +569,15 @@ class StorageManager {
   public resetToDefaults() {
     // QR gov-check records survive demo resets explicitly — they are permanent evidence.
     const preserved = Array.isArray(this.data.govChecks) ? this.data.govChecks : [];
+    // Farmer self-checks are QR-backed as well - their verify links must keep resolving.
+    const preservedFarmer = Array.isArray(this.data.farmerChecks) ? this.data.farmerChecks : [];
     this.data = {
       warehouses: INITIAL_WAREHOUSES,
       verifications: INITIAL_VERIFICATIONS,
       reviews: INITIAL_REVIEWS,
       profile: this.data.profile || null,
       govChecks: preserved,
+      farmerChecks: preservedFarmer,
     };
     this.saveData(this.data);
     return this.data;
