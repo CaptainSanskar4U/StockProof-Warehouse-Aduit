@@ -354,7 +354,7 @@ export default function App() {
       <main className={activeVerificationWarehouse || currentView !== 'overview' ? 'flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto' : 'flex-1 w-full'}>
         {/* If an active verification flow is open, show the 4-step pipeline */}
         {activeVerificationWarehouse ? (
-          <div className="py-2 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="py-2 max-w-7xl mx-auto">
             <VerificationFlow
               warehouse={activeVerificationWarehouse}
               onCancel={() => setActiveVerificationWarehouse(null)}
@@ -452,7 +452,7 @@ export default function App() {
         <button
           type="button"
           onClick={handleSwitchRole}
-          className="fixed bottom-4 right-4 z-40 px-3.5 py-2 rounded-full bg-[var(--sheet)] border border-[var(--hairline-strong)] text-[var(--ink-2)] text-[11px] font-mono shadow-[var(--sheet-shadow)] hover:border-[var(--gold)] transition-colors cursor-pointer"
+          className="fixed bottom-24 right-4 z-50 px-3.5 py-2 rounded-full bg-[var(--sheet)] border border-[var(--hairline-strong)] text-[var(--ink-2)] text-[11px] font-mono shadow-[var(--sheet-shadow)] hover:border-[var(--gold)] transition-colors cursor-pointer"
         >
           {role === 'farmer' ? 'Switch to Inspector' : 'Switch to Farmer'}
         </button>

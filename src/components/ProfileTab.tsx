@@ -266,8 +266,8 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onProfileSaved }) => {
                 <span className="font-mono text-[11px] text-[var(--oncard-dim)]">Not saved yet</span>
               )}
             </div>
-            <h2 className="serif-reading text-2xl sm:text-3xl mt-2 truncate">{personName || 'Your name appears here'}</h2>
-            <p className="text-sm text-[var(--oncard)] mt-0.5 truncate">
+            <h2 className="serif-reading text-2xl sm:text-3xl mt-2 break-words">{personName || 'Your name appears here'}</h2>
+            <p className="text-sm text-[var(--oncard)] mt-0.5 break-words">
               {orgLine}
               {personId ? ` · ID ${personId}` : ''}
             </p>
@@ -527,7 +527,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onProfileSaved }) => {
 
       {/* Sticky save bar */}
       <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--hairline)] bg-[var(--sheet-translucent)] backdrop-blur px-4 py-3">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+        <div className="max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <p className="font-mono text-[11px] text-[var(--ink-faint)]">
             {savedAt ? `Saved ${new Date(savedAt).toLocaleString()}` : 'Not saved yet — your details stay on this device registry'}
           </p>
@@ -544,3 +544,6 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onProfileSaved }) => {
     </div>
   );
 };
+
+
+

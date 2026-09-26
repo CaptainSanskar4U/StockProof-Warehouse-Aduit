@@ -244,7 +244,7 @@ export const WarehouseDetailModal: React.FC<WarehouseDetailModalProps> = ({
                 {/* Selected Run Details View */}
                 {selectedRun && (
                   <div className="md:col-span-2 bg-[var(--well)] border border-[var(--hairline)] rounded-xl p-4 space-y-4">
-                    <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] pb-3">
                       <div>
                         <span className="text-[10px] font-mono text-[var(--ink-soft)] uppercase block">
                           SELECTED AUDIT RUN / {selectedRun.id}
@@ -410,3 +410,4 @@ export const WarehouseDetailModal: React.FC<WarehouseDetailModalProps> = ({
     </div>
   );
 };
+

@@ -925,7 +925,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             }}
           />
 
-          <div className="mt-4 flex items-center justify-center gap-5 text-sm">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm">
             <button
               type="button"
               onClick={() => {
@@ -959,7 +959,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 
       {/* Photo on file — swap it or remove it */}
       {phase === 'photo' && photo && (
-        <div className="washi-sheet p-3 flex items-center gap-3 washi-enter">
+        <div className="washi-sheet p-3 flex flex-wrap items-center gap-3 washi-enter">
           <SafeImage src={photo.dataUrl} alt="Your pile" className="w-16 h-16 rounded-[10px] object-cover border border-[rgba(42,33,24,0.14)] shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm text-[#2A2118] truncate">{photo.source === 'camera' ? 'Fresh from the field' : photo.name}</p>
@@ -1086,7 +1086,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                     return (
                       <button
                         key={s} type="button" onClick={() => setSeason(s)}
-                        className={`touch-target px-3.5 py-3 rounded-[10px] text-left border transition-all cursor-pointer ${
+                        className={`touch-target flex-col items-start px-3.5 py-3 rounded-[10px] text-left border transition-all cursor-pointer ${
                           active
                             ? 'bg-[#EFE7D4] border-[#A87F2A]/60'
                             : 'bg-transparent border-[rgba(42,33,24,0.12)] hover:border-[rgba(42,33,24,0.3)]'
@@ -1129,7 +1129,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 
               <div>
                 <p className="eyebrow-quiet">How tightly it has settled</p>
-                <div className="grid grid-cols-3 gap-2 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
                   {([
                     { id: 'low', label: 'Freshly poured', sub: 'loose' },
                     { id: 'medium', label: 'Settled', sub: 'natural' },
@@ -1137,7 +1137,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                   ] as { id: CompactionLevel; label: string; sub: string }[]).map((c) => (
                     <button
                       key={c.id} type="button" onClick={() => setCompaction(c.id)}
-                      className={`touch-target px-2 py-2.5 rounded-[10px] border transition-all cursor-pointer text-center ${
+                      className={`touch-target flex-col items-center justify-center px-2 py-2.5 rounded-[10px] border transition-all cursor-pointer text-center ${
                         compaction === c.id
                           ? 'bg-[#2A2118] text-[#F6F1E7] border-[#2A2118]'
                           : 'bg-transparent border-[rgba(42,33,24,0.14)] hover:border-[rgba(42,33,24,0.32)]'
@@ -1176,10 +1176,10 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                       setDeclaredText(e.target.value);
                       setDeclaredTouched(true);
                     }}
-                    className="w-full bg-transparent text-4xl serif-reading text-[#2A2118] focus:outline-none placeholder:text-[#8A7D68]/50"
+                    className="w-full min-w-0 bg-transparent text-3xl sm:text-4xl serif-reading text-[#2A2118] focus:outline-none placeholder:text-[#8A7D68]/50"
                     placeholder={warehouse.currentDeclaredTonnes.toFixed(1)}
                   />
-                  <span className="font-mono text-sm text-[#8A7D68]">tonnes</span>
+                  <span className="shrink-0 font-mono text-sm text-[#8A7D68]">tonnes</span>
                 </div>
                 <p className="font-mono text-[11px] text-[#8A7D68] mt-2">
                   Registry holds {warehouse.currentDeclaredTonnes.toFixed(1)} T · this store can carry {warehouse.capacityTonnes.toFixed(0)} T
@@ -1238,7 +1238,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
         </div>
 
           {/* Check — the single step forward */}
-          <div className="px-5 sm:px-7 pb-6 sm:pb-7 pt-5 flex items-center justify-between gap-3">
+          <div className="px-5 sm:px-7 pb-6 sm:pb-7 pt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <button
               type="button"
               onClick={() => setPhase('photo')}
@@ -1390,7 +1390,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
                   {verdictTone.sentence}
                 </h2>
                 <div className="flex items-baseline justify-center gap-2 mt-4">
-                  <span className="serif-reading text-[#2A2118] text-6xl sm:text-7xl leading-none">
+                  <span className="serif-reading text-[#2A2118] text-5xl sm:text-7xl leading-none">
                     {estimationResult.centralEstimateTonnes.toFixed(1)}
                   </span>
                   <span className="font-mono text-sm text-[#8A7D68]">tonnes</span>
@@ -1402,7 +1402,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
             )}
 
             {/* Why it matters — the quiet ledger */}
-            <div className="max-w-md mx-auto mt-7 pt-6 border-t border-[rgba(42,33,24,0.12)] grid grid-cols-3 gap-4 text-center">
+            <div className="max-w-md mx-auto mt-7 pt-6 border-t border-[rgba(42,33,24,0.12)] grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
               <div>
                 <p className="eyebrow-quiet">On paper</p>
                 <p className="font-mono text-[15px] text-[#2A2118] mt-1">{runDeclared.toFixed(1)} T</p>
@@ -1571,7 +1571,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
 
       {/* --- Camera — held gently --- */}
       {cameraOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2A2118]/60 backdrop-blur-sm washi-veil">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 overflow-y-auto bg-[#2A2118]/60 backdrop-blur-sm washi-veil">
           <div className="washi-sheet overflow-hidden max-w-lg w-full washi-enter">
             <div className="px-5 py-3.5 border-b border-[rgba(42,33,24,0.12)] flex items-center justify-between">
               <span className="eyebrow-quiet">
@@ -1630,3 +1630,7 @@ img{max-width:100%;border:1px solid #ccc;margin:12px 0}
     </div>
   );
 };
+
+
+
+

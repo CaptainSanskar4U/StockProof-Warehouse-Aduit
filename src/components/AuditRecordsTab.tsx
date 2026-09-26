@@ -183,7 +183,7 @@ export const AuditRecordsTab: React.FC<AuditRecordsTabProps> = ({ agentType, ref
                 <p className="font-mono text-[11px] text-[var(--danger-ink)]">untrusted estimate — not evidence</p>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
               <StatusChip status={a.status} />
               <button
                 type="button"

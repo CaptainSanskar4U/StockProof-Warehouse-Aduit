@@ -65,11 +65,11 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({ id, onClos
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--overlay-soft)]"
+      className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 overflow-y-auto bg-[var(--overlay-soft)]"
       onClick={onClose}
     >
       <div
-        className="washi-sheet max-w-xl w-full px-5 sm:px-6 py-5 max-h-[88vh] overflow-y-auto"
+        className="washi-sheet max-w-xl w-full px-5 sm:px-6 py-5 max-h-[88dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -251,3 +251,5 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({ id, onClos
     </div>
   );
 };
+
+

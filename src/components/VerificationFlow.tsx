@@ -379,14 +379,14 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 </div>
 
                 {/* Bottom telemetry badge */}
-                <div className="self-end text-[10px] font-mono text-[var(--oncard)] bg-[var(--overlay)] px-2 py-1 rounded border border-[var(--success-line)]">
+                <div className="self-end max-w-full telemetry text-[10px] font-mono text-[var(--oncard)] bg-[var(--overlay)] px-2 py-1 rounded border border-[var(--success-line)]">
                   <span>✓ SURFACE BOUNDARY LOCKED · {mediaType === 'video-frame' ? 'VIDEO FRAME' : 'STILL PHOTO'}</span>
                 </div>
               </div>
             )}
 
             {/* Overlay controls */}
-            <div className="absolute top-3 right-3 flex items-center gap-2">
+            <div className="absolute top-3 right-3 max-w-[calc(100%-1.5rem)] flex flex-wrap items-center justify-end gap-2">
               {videoUrl && (
                 <button
                   type="button"
@@ -510,7 +510,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
           </div>
 
           {/* Navigation */}
-          <div className="pt-4 border-t border-[var(--hairline)] flex items-center justify-between">
+          <div className="pt-4 border-t border-[var(--hairline)] flex flex-wrap items-center justify-between gap-2">
             <button
               type="button"
               onClick={onCancel}
@@ -652,7 +652,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 <label className="text-xs font-mono text-[var(--ink-soft)] block mb-1.5">
                   Measurement Methodology
                 </label>
-                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
                   {[
                     { id: 'laser_assisted', label: 'Laser Rangefinder' },
                     { id: 'ar_marker', label: 'AR Optical Marker' },
@@ -688,7 +688,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 <label className="text-xs font-mono text-[var(--ink-soft)] block mb-1.5">
                   Grain Type & Agronomic Bulk Density
                 </label>
-                <div className="grid grid-cols-3 gap-2 text-xs font-mono">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-mono">
                   {(Object.keys(GRAIN_BULK_DENSITIES) as GrainType[]).map((key) => {
                     const profile = GRAIN_BULK_DENSITIES[key];
                     return (
@@ -737,7 +737,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 <label className="text-xs font-mono text-[var(--ink-soft)] block mb-1.5">
                   Compaction Level
                 </label>
-                <div className="grid grid-cols-3 gap-2 text-xs font-mono">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
                   {[
                     { id: 'low', label: 'Low (×0.94)', sub: 'Freshly dumped' },
                     { id: 'medium', label: 'Medium (×1.0)', sub: 'Settled normal' },
@@ -785,7 +785,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
           </div>
 
           {/* Navigation */}
-          <div className="pt-4 border-t border-[var(--hairline)] flex items-center justify-between">
+          <div className="pt-4 border-t border-[var(--hairline)] flex flex-wrap items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => setStep(1)}
@@ -890,7 +890,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
 
             {/* Estimated Range */}
             <div className="bg-[var(--well)] p-4 rounded border border-[var(--gold-line)] sm:col-span-2 relative overflow-hidden">
-              <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                 <span className="text-[10px] font-mono text-[var(--gold)] tracking-widest uppercase font-semibold">
                   PHYSICAL ESTIMATED RANGE (DEFENSIBLE BOUNDS)
                 </span>

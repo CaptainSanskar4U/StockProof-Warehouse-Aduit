@@ -45,9 +45,9 @@ export const VerifyCheck: React.FC<{ id: string }> = ({ id }) => {
           <div className="w-9 h-9 rounded-full bg-[#2B2016] text-white flex items-center justify-center text-xl shrink-0">
             🌾
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-base font-instrument-serif text-[#3D3226] leading-tight">StockProof Verification</p>
-            <p className="text-[11px] font-mono text-[#2B2016]/55 leading-tight">Stored record · {id}</p>
+            <p className="text-[11px] font-mono text-[#2B2016]/55 leading-tight break-all">Stored record · {id}</p>
           </div>
         </div>
       </header>
@@ -91,7 +91,7 @@ const VerifyRecord: React.FC<{ record: FarmerCheck }> = ({ record: r }) => {
     <div className="space-y-4">
       <div className="bg-white border border-[#3D3226]/10 rounded-2xl p-6 text-center space-y-1">
         <p className="text-xs font-mono uppercase tracking-widest text-[#2B2016]/55">Verified check</p>
-        <p className="font-mono text-2xl font-bold tracking-widest text-[#3D3226]">{r.id}</p>
+        <p className="font-mono text-2xl font-bold tracking-widest text-[#3D3226] break-all">{r.id}</p>
         <p className="text-xs text-[#2B2016]/55">{new Date(r.createdAt).toLocaleString()}</p>
       </div>
       {unverified ? (
@@ -115,10 +115,10 @@ const VerifyRecord: React.FC<{ record: FarmerCheck }> = ({ record: r }) => {
         </div>
       )}
       <div className="bg-white border border-[#3D3226]/10 rounded-2xl p-5 space-y-3">
-        <div className="flex items-baseline justify-between gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <p className="text-xs font-mono uppercase tracking-widest text-[#2B2016]/55">Receipt said</p>
-            <p className="font-instrument-serif text-4xl text-[#3D3226]">{r.declaredTonnes} T</p>
+            <p className="font-instrument-serif text-3xl sm:text-4xl text-[#3D3226]">{r.declaredTonnes} T</p>
           </div>
           <div className="text-right">
             <p className="text-xs font-mono uppercase tracking-widest text-[#2B2016]/55">Pile estimate</p>
@@ -167,3 +167,8 @@ const VerifyRecord: React.FC<{ record: FarmerCheck }> = ({ record: r }) => {
     </div>
   );
 };
+
+
+
+
+

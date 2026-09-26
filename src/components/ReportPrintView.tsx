@@ -178,7 +178,7 @@ export const ReportPrintView: React.FC<ReportPrintViewProps> = ({ verificationId
           <article>
             {/* ---------------- Masthead ---------------- */}
             <header style={{ borderBottom: `2pt solid ${INK}`, paddingBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, letterSpacing: 2.4, color: ACCENT, textTransform: 'uppercase', fontWeight: 700 }}>
                     StockProof · Warehouse Audit &amp; Risk Compliance
@@ -293,7 +293,7 @@ export const ReportPrintView: React.FC<ReportPrintViewProps> = ({ verificationId
 
             {/* ---------------- 4. Evidence + QR ---------------- */}
             <Section n="4" title="Evidence &amp; verification">
-              <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 auto', minWidth: 0 }}>
                   <Label>Photograph on record</Label>
                   {record.photoDataUrl ? (
@@ -308,12 +308,12 @@ export const ReportPrintView: React.FC<ReportPrintViewProps> = ({ verificationId
                     </div>
                   )}
                 </div>
-                <div style={{ flex: '0 0 168px' }}>
+                <div style={{ flex: '1 1 168px', maxWidth: 168, minWidth: 0 }}>
                   <Label>Verification QR</Label>
                   {qrDataUrl ? (
-                    <img src={qrDataUrl} alt={`Verification QR for ${record.id}`} style={{ width: 168, height: 168, marginTop: 4 }} />
+                    <img src={qrDataUrl} alt={`Verification QR for ${record.id}`} style={{ width: '100%', maxWidth: 168, aspectRatio: '1 / 1', height: 'auto', marginTop: 4 }} />
                   ) : (
-                    <div style={{ width: 168, height: 168, border: `0.5pt solid ${HAIRLINE}`, marginTop: 4 }} />
+                    <div style={{ width: '100%', maxWidth: 168, aspectRatio: '1 / 1', border: `0.5pt solid ${HAIRLINE}`, marginTop: 4 }} />
                   )}
                   <div style={{ fontFamily: 'Courier New, monospace', fontSize: 8.5, marginTop: 5, wordBreak: 'break-all', lineHeight: 1.35 }}>
                     {buildVerifyUrl(record.id)}
@@ -353,7 +353,7 @@ export const ReportPrintView: React.FC<ReportPrintViewProps> = ({ verificationId
 
             {/* ---------------- Footer ---------------- */}
             <footer style={{ borderTop: `1pt solid ${RULE}`, marginTop: 16, paddingTop: 7, fontSize: 9, color: INK_SOFT, fontFamily: 'Arial, Helvetica, sans-serif', lineHeight: 1.5 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
                 <span>Report {record.id} · audit ref {record.verificationId || '—'}</span>
                 <span>Issued {fmtDateTime(record.createdAt)}</span>
               </div>
@@ -434,3 +434,4 @@ const TR: React.FC<{ k: string; v: string; strike?: boolean; vColor?: string }> 
     </td>
   </tr>
 );
+

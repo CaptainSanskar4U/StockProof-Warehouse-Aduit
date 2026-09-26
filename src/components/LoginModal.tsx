@@ -52,7 +52,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSucce
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in overflow-y-auto"
+      className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in overflow-y-auto"
       onClick={dismissable ? onClose : undefined}
       role="dialog"
       aria-modal="true"
@@ -98,7 +98,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSucce
         .login-popup-role button.active { background: #fff; color: #111; border-color: #fff; }
         .login-popup-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #212121; border: 1px solid #2e2e2e; color: #96968f; cursor: pointer; }
         .login-popup-close:hover { color: #fff; border-color: #3a3a3a; }
-        @media (max-width:760px) { .login-popup-card { flex-direction: column; max-height: 92dvh; overflow-y: auto; } .login-popup-left { min-height: 200px; padding: 28px 24px; } .login-popup-right { padding: 28px 22px; } .login-popup-row { flex-direction: column; gap: 0; } }
+        @media (max-width:1024px) { .login-popup-card { flex-direction: column; min-height: 0; max-height: 92dvh; overflow-y: auto; } .login-popup-left { min-height: 200px; padding: 28px 24px; } .login-popup-right { padding: 28px 22px; } .login-popup-row { flex-direction: column; gap: 0; } }
       `}</style>
 
       <div className="login-popup-card" onClick={(e) => e.stopPropagation()}>
@@ -192,3 +192,4 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSucce
     </div>
   );
 };
+

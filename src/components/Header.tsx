@@ -23,7 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTheme,
 }) => {
   const tabClass = (active: boolean) =>
-    `px-4 py-2 rounded-full text-[13px] font-mono tracking-wider transition-colors cursor-pointer ${
+    `px-3 py-2 rounded-full text-[12px] font-mono tracking-wider transition-colors cursor-pointer whitespace-nowrap ${
       active
         ? 'bg-[var(--ink)] text-[var(--ink-inverse)] font-bold'
         : 'text-[var(--ink-soft)] hover:text-[var(--ink-2)]'
@@ -80,7 +80,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Navigation tabs */}
-          <nav className="hidden md:flex items-center gap-1.5 ml-8 pl-8 border-l border-[var(--hairline)]">
+          <nav className="hidden lg:flex items-center gap-1 ml-4 pl-4 border-l border-[var(--hairline)]">
             <button
               onClick={() => onNavigate('overview')}
               className={tabClass(currentView === 'overview')}
@@ -128,22 +128,22 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Mobile nav bar */}
-      <div className="safe-bottom flex md:hidden border-t border-[var(--hairline)] bg-[var(--sheet)] px-2 pt-1.5 justify-around text-xs font-mono">
+      <div className="safe-bottom flex lg:hidden overflow-x-auto border-t border-[var(--hairline)] bg-[var(--sheet)] px-2 pt-1.5 justify-start sm:justify-around text-[11px] font-mono">
         <button
           onClick={() => onNavigate('overview')}
-          className={`touch-target py-2 px-3 ${currentView === 'overview' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
+          className={`touch-target shrink-0 py-2 px-3 ${currentView === 'overview' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
         >
           OVERVIEW
         </button>
         <button
           onClick={() => onNavigate('dashboard')}
-          className={`touch-target py-2 px-3 ${currentView === 'dashboard' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
+          className={`touch-target shrink-0 py-2 px-3 ${currentView === 'dashboard' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
         >
           PANEL
         </button>
         <button
           onClick={() => onNavigate('reviews')}
-          className={`touch-target py-2 px-3 flex items-center gap-1 ${currentView === 'reviews' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
+          className={`touch-target shrink-0 py-2 px-3 flex items-center gap-1 ${currentView === 'reviews' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
         >
           <span>BANK CHECKS</span>
           {openReviewCount > 0 && (
@@ -154,13 +154,13 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
         <button
           onClick={() => onNavigate('reports')}
-          className={`touch-target py-2 px-3 ${currentView === 'reports' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
+          className={`touch-target shrink-0 py-2 px-3 ${currentView === 'reports' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
         >
           REPORT
         </button>
         <button
           onClick={() => onNavigate('profile')}
-          className={`touch-target py-2 px-3 ${currentView === 'profile' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
+          className={`touch-target shrink-0 py-2 px-3 ${currentView === 'profile' ? 'text-[var(--gold)] font-bold' : 'text-[var(--ink-soft)]'}`}
         >
           PROFILE
         </button>

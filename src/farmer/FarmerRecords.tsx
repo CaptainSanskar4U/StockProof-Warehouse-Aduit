@@ -126,20 +126,20 @@ const RecordDetail: React.FC<{ record: FarmerRecord; onBack: () => void; lookupM
         <img src={r.photoDataUrl} alt="Grain pile" className="w-full rounded-2xl border border-[#3D3226]/10 max-h-80 object-cover" />
       )}
       <div className="bg-white border border-[#3D3226]/10 rounded-2xl p-5">
-        <div className="flex items-baseline justify-between gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <p className="text-xs font-mono uppercase tracking-widest text-[#2B2016]/55">Receipt said</p>
-            <p className="font-instrument-serif text-4xl text-[#3D3226]">{r.declaredTonnes} T</p>
+            <p className="font-instrument-serif text-3xl sm:text-4xl text-[#3D3226]">{r.declaredTonnes} T</p>
           </div>
           <div className="text-right">
             <p className="text-xs font-mono uppercase tracking-widest text-[#2B2016]/55">Pile looked like</p>
             {unverified ? (
               <>
-                <p className="font-instrument-serif text-4xl text-[#8A7D68]/70 line-through">{r.estLow}–{r.estHigh} T</p>
+                <p className="font-instrument-serif text-3xl sm:text-4xl text-[#8A7D68]/70 line-through">{r.estLow}–{r.estHigh} T</p>
                 <p className="font-mono text-[11px] text-[#8A7D68]">untrusted estimate — not evidence</p>
               </>
             ) : (
-              <p className="font-instrument-serif text-4xl text-[#3D3226]">{r.estLow}–{r.estHigh} T</p>
+              <p className="font-instrument-serif text-3xl sm:text-4xl text-[#3D3226]">{r.estLow}–{r.estHigh} T</p>
             )}
           </div>
         </div>
@@ -332,13 +332,13 @@ export const FarmerRecords: React.FC<FarmerRecordsProps> = ({ onGoAudit }) => {
             value={codeInput}
             onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
             placeholder="SP-XXXXX"
-            className="flex-1 bg-[#F5F0E8] border border-[#3D3226]/15 rounded-xl px-4 py-3 font-mono text-lg tracking-widest text-[#2A2118] placeholder-[#2B2016]/30 focus:outline-none focus:border-[#B98A2E] uppercase"
+            className="flex-1 min-w-0 w-0 bg-[#F5F0E8] border border-[#3D3226]/15 rounded-xl px-4 py-3 font-mono text-lg tracking-widest text-[#2A2118] placeholder-[#2B2016]/30 focus:outline-none focus:border-[#B98A2E] uppercase"
             maxLength={8}
           />
           <button
             type="button"
             onClick={runLookup}
-            className="touch-target px-5 py-3 rounded-xl bg-[#2B2016] text-white font-bold cursor-pointer flex items-center gap-1.5"
+            className="touch-target shrink-0 px-5 py-3 rounded-xl bg-[#2B2016] text-white font-bold cursor-pointer flex items-center gap-1.5"
           >
             <Search className="w-4 h-4" />
             <span>Look up</span>
@@ -348,3 +348,6 @@ export const FarmerRecords: React.FC<FarmerRecordsProps> = ({ onGoAudit }) => {
     </div>
   );
 };
+
+
+
